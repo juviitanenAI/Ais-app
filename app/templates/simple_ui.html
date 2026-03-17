@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>AIS Simple Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
+  <style>
+    body { margin:0; font-family:Arial, sans-serif; }
+    #topbar {
+      background:#f2f2f2; padding:10px; display:flex; gap:8px; align-items:center;
+      border-bottom:1px solid #ccc;
+    }
+    #map { height: calc(100vh - 50px); width: 100%; }
+    #vessels { width:260px; padding:4px; }
+    .btn { padding:6px 10px; border:1px solid #888; border-radius:6px; background:white; cursor:pointer; }
+    label { display:flex; align-items:center; gap:6px; }
+  </style>
+
+  <!-- ✅ Leaflet CSS (correct SRI + crossorigin) -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-sA+vx6kXIBYmb1z6KYxAsktwVDqveXc7fXfOodZ8kQA="
+    crossorigin=""
+  />
+</head>
+<body>
+
+  <div id="topbar">
+    <input id="search" placeholder="Search vessel…" style="flex:1; padding:6px" />
+    <select id="vessels" size="1" aria-label="Vessels"></select>
+    <label><input type="checkbox" id="historyChk"> History (3h)</label>
+    <button class="btn" id="followBtn">Follow</button>
+  </div>
+
+  <div id="map"></div>
+
+  <!-- ✅ Leaflet JS (correct SRI + crossorigin) -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-o9N1jzN1cLsyLMFjScTchajVEpRRMpFPdMG+ZJC1A94="
+    crossorigin=""
+  ></script>
+
+  <script>
+  // -------------------- Config: set these to your Python backend --------------------
+  // If your FastAPI/Uvicorn runs at http://localhost:8000, leave as-is:
+  const API_BASE = "http://localhost:8000";
+  const WS_URL   = (location.protocol === "https:" ? "wss://" : "ws://") + "localhost:8000/ws";
+
+  // If your UI is served from the SAME origin as the backend (reverse proxy), you can use:
+  // const API_BASE = "";
+  // const WS_URL = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+
+  // -------------------- Map --------------------
+  console.log("Initializing map...");
+  const map = L.map('map', { zoomControl: true }).setView([60.2, 24.9], 7);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  // -------------------- Global state --------------------
+  let ws = null;
+  let marker = null;
+  let polyline = null;
+  let currentMmsi = null;
+  let autoFollowDone = false;
+  let lastPanTs = 0;
+
+  // -------------------- Utilities --------------------
+  function clearLayers() {
+    if (marker) { map.removeLayer(marker); marker = null; }
+    if (polyline) { map.removeLayer(polyline); polyline = null; }
+  }
+
+  function closeWS() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      try { ws.close(1000, "Switching vessel"); } catch {}
+    }
+    ws = null;
+  }
+
+  function debounce(fn, ms = 300) {
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  }
+
+  // -------------------- Data loading --------------------
+  async function loadCatalog() {
+    const q = document.getElementById('search').value || "";
+    const url = `${API_BASE}/api/vessels?q=${encodeURIComponent(q)}`;
+    try {
+      console.log("[catalog] GET", url);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const sel = document.getElementById('vessels');
+      sel.innerHTML = "";
+
+      if (!Array.isArray(data) || data.length === 0) {
+        sel.appendChild(new Option("No vessels found", "", true, true));
+        console.warn("[catalog] empty");
+        return;
+      }
+
+      data.forEach(v => {
+        const o = document.createElement('option');
+        o.value = v.mmsi;
+        o.textContent = (v.name || "(???)") + " – " + v.mmsi;
+        sel.appendChild(o);
+      });
+
+      console.log("[catalog] loaded:", data.length);
+
+      // Auto-follow only if nothing is selected and we have results
+      if (data.length > 0 && !currentMmsi && !autoFollowDone) {
+        sel.value = data[0].mmsi;
+        startFollowing(data[0].mmsi);
+        autoFollowDone = true;
+      }
+    } catch (e) {
+      console.error('Failed to load /api/vessels:', e);
+      const sel = document.getElementById('vessels');
+      sel.innerHTML = "";
+      sel.appendChild(new Option("Catalog error (see console)", "", true, true));
+    }
+  }
+
+  function connectWS(mmsi) {
+    closeWS(); // ensure only one connection
+    console.log("[ws] connecting to", WS_URL);
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      console.log('[ws] open → subscribing', mmsi);
+      ws.send(JSON.stringify({ type: "subscribe", mmsi: [mmsi] }));
+    };
+
+    ws.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (err) {
+        console.warn("[ws] non-JSON message:", ev.data);
+        return;
+      }
+
+      if (msg.type !== "location") return;
+      if (msg.mmsi !== currentMmsi) return; // ignore other MMSIs
+
+      // Tolerant parsing: support {loc:{lat,lon}} OR {latitude,longitude}
+      const lat = (msg.loc && typeof msg.loc.lat === "number") ? msg.loc.lat : msg.latitude;
+      const lon = (msg.loc && typeof msg.loc.lon === "number") ? msg.loc.lon : msg.longitude;
+
+      if (typeof lat !== "number" || typeof lon !== "number") {
+        console.warn("[ws] missing lat/lon in", msg);
+        return;
+      }
+
+      const latlng = [lat, lon];
+
+      if (!marker) {
+        marker = L.marker(latlng).addTo(map).bindPopup(msg.mmsi);
+      } else {
+        marker.setLatLng(latlng);
+      }
+
+      const now = Date.now();
+      if (now - lastPanTs > 750) {
+        map.panTo(latlng, { animate: true, duration: 0.5 });
+        lastPanTs = now;
+      }
+    };
+
+    ws.onerror = (e) => console.error('[ws] error', e);
+    ws.onclose = (ev) => console.log('[ws] closed', ev.code, ev.reason || '');
+  }
+
+  async function loadHistory(mmsi) {
+    if (polyline) { map.removeLayer(polyline); polyline = null; }
+    if (!document.getElementById('historyChk').checked) return;
+
+    const url = `${API_BASE}/api/history?mmsi=${encodeURIComponent(mmsi)}&minutes=180`;
+    try {
+      console.log("[history] GET", url);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const d = await res.json();
+      const pts = (d[mmsi] || []).map(p => [p.lat, p.lon]);
+
+      if (pts.length) {
+        polyline = L.polyline(pts, { color: "blue", weight: 3 }).addTo(map);
+        if (!marker) {
+          map.fitBounds(polyline.getBounds().pad(0.2));
+        }
+      } else {
+        console.log("[history] no points for", mmsi);
+      }
+    } catch (e) {
+      console.error("[history] failed:", e);
+    }
+  }
+
+  function startFollowing(mmsi) {
+    if (!mmsi) return;
+    currentMmsi = mmsi;
+    clearLayers();
+    connectWS(mmsi);
+    loadHistory(mmsi);
+  }
+
+  // -------------------- UI wiring --------------------
+  const debouncedLoadCatalog = debounce(loadCatalog, 250);
+
+  document.getElementById('search').addEventListener('input', () => {
+    autoFollowDone = false;
+    debouncedLoadCatalog();
+  });
+
+  document.getElementById('vessels').addEventListener('change', (e) => {
+    const m = e.target.value;
+    if (m && m !== currentMmsi) {
+      startFollowing(m);
+    }
+  });
+
+  document.getElementById('historyChk').addEventListener('change', () => {
+    if (currentMmsi) loadHistory(currentMmsi);
+  });
+
+  document.getElementById('followBtn').onclick = () => {
+    const m = document.getElementById('vessels').value;
+    if (!m) { alert('Select a vessel first'); return; }
+    if (m !== currentMmsi) startFollowing(m);
+    else loadHistory(m);
+  };
+
+  // Initial load
+  loadCatalog();
+  </script>
+
+</body>
+</html>
