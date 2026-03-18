@@ -10,6 +10,7 @@ class WebSocketManager:
     def __init__(self):
         self.clients: Set[WebSocket] = set()
         self.subscriptions: Dict[WebSocket, Set[str]] = {}
+        self.subscribe_all_clients: Set[WebSocket] = set()
 
     def tracked_union(self) -> Set[str]:
         tracked: Set[str] = set()
@@ -25,12 +26,21 @@ class WebSocketManager:
     def unregister(self, ws: WebSocket):
         self.clients.discard(ws)
         self.subscriptions.pop(ws, None)
+        self.subscribe_all_clients.discard(ws)
 
     async def handle_message(self, ws: WebSocket, data: str):
-        """Odottaa viestejä muodossa: {"type":"subscribe","mmsi":["123","456"]}"""
+        """Odottaa viestejä muodossa:
+        {"type":"subscribe","mmsi":["123","456"]}
+        {"type":"subscribe_all"}
+        """
         try:
             msg = json.loads(data)
-            if msg.get("type") == "subscribe":
+            msg_type = msg.get("type")
+
+            if msg_type == "subscribe_all":
+                self.subscribe_all_clients.add(ws)
+
+            elif msg_type == "subscribe":
                 incoming = {s for s in msg.get("mmsi", []) if s}
                 prev = self.subscriptions.get(ws, set())
                 newly_added = incoming - prev
@@ -44,12 +54,16 @@ class WebSocketManager:
             pass
 
     async def broadcast_location(self, mmsi: str, message: dict):
-        """Lähetä live-sijainti vain niille klienteille, jotka seuraavat MMSI:tä."""
+        """Lähetä live-sijainti subscribe_all -klienteille sekä MMSI-tilaajille."""
         text = json.dumps(message)
         stale = []
         for ws in list(self.clients):
             try:
-                if mmsi in self.subscriptions.get(ws, set()):
+                is_subscribed = (
+                    ws in self.subscribe_all_clients
+                    or mmsi in self.subscriptions.get(ws, set())
+                )
+                if is_subscribed:
                     await ws.send_text(text)
             except Exception:
                 stale.append(ws)

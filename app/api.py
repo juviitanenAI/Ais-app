@@ -5,29 +5,58 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pathlib import Path
 
 from .config import settings
-from . import db
+from . import db, state
 from .ws_manager import WebSocketManager
+
+TEMPLATES = Path(__file__).parent / "templates"
 
 def create_app(ws_mgr: WebSocketManager) -> FastAPI:
     app = FastAPI()
 
-    # --- UI (yksinkertainen) ---
+    # --- UI ---
     @app.get("/")
     def root():
-        # ohjataan suoraan simple UI:hin
-        return HTMLResponse(Path(__file__).with_suffix("").parent.joinpath("templates", "simple_ui.html").read_text(encoding="utf-8"))
+        return HTMLResponse(
+            (TEMPLATES / "map_ui.html").read_text(encoding="utf-8")
+        )
 
     @app.get("/simple")
     def simple_ui():
-        return root()
+        return HTMLResponse(
+            (TEMPLATES / "simple_ui.html").read_text(encoding="utf-8")
+        )
 
-    # --- API: aluskatalogi (nimeä/MMSI:tä varten) ---
+    # --- API: vessel catalog (name/MMSI search) ---
     @app.get("/api/vessels")
-    def api_vessels(q: str | None = Query(default=None, description="FILTTERI nimi tai MMSI")):
+    def api_vessels(q: str | None = Query(default=None, description="Filter by name or MMSI")):
         rows = db.query_vessels(q=q, limit=2000)
         return JSONResponse([{"mmsi": r[0], "name": r[1]} for r in rows])
 
-    # --- API: 3h historia 15 min resoluutiolla ---
+    # --- API: all vessels with current position (for initial map load) ---
+    @app.get("/api/vessels/live")
+    def api_vessels_live():
+        result = []
+        with state.latest_lock:
+            for mmsi, v in state.latest.items():
+                loc = v.get("loc")
+                if not loc or loc.get("lat") is None or loc.get("lon") is None:
+                    continue
+                meta = v.get("meta", {})
+                result.append({
+                    "mmsi": mmsi,
+                    "name": meta.get("name", ""),
+                    "type": meta.get("type"),
+                    "destination": meta.get("destination", ""),
+                    "lat": loc["lat"],
+                    "lon": loc["lon"],
+                    "sog": loc.get("sog"),
+                    "cog": loc.get("cog"),
+                    "heading": loc.get("heading"),
+                    "lastSeen": v.get("last_seen"),
+                })
+        return JSONResponse(result)
+
+    # --- API: history (15-min samples) ---
     @app.get("/api/history")
     def api_history(mmsi: str, minutes: int = 180):
         mm = [x.strip() for x in mmsi.split(",") if x.strip()]
@@ -37,7 +66,7 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         out = db.query_history(mm, since)
         return JSONResponse(out)
 
-    # --- WebSocket: tilaus valittuihin MMSI:hin ---
+    # --- WebSocket: live vessel updates ---
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket):
         await ws_mgr.register(ws)

@@ -26,6 +26,9 @@ class Settings:
         float(os.getenv("BBOX_LAT_MAX", "66.0")),
     )
 
+    # Stale vessel threshold (minutes) – vessels older than this are dimmed/hidden
+    STALE_VESSEL_MINUTES: int = int(os.getenv("STALE_VESSEL_MINUTES", "30"))
+
     # SQLite
     DB_PATH: str = os.getenv("DB_PATH", "vessels.sqlite")
 
