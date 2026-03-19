@@ -95,7 +95,8 @@
       gap: 8px;
     }
 
-    .sidebar-title .icon { font-size: 22px; }
+    .sidebar-title .icon { font-size: 22px; padding-left: 44px; }
+    .sidebar-title .version { font-size: 8px; color: var(--text-secondary); vertical-align: super; }  
 
     .search-box {
       position: relative;
@@ -142,6 +143,18 @@
       display: flex;
       align-items: center;
       gap: 4px;
+    }
+
+    .right-stat {
+      margin-left: auto;
+    }
+
+    .mobile-branding {
+      display: none;
+    }
+
+    .mobile-list-close {
+      display: none;
     }
 
     .stat-dot {
@@ -474,6 +487,46 @@
     @media (max-width: 768px) {
       :root { --sidebar-width: 100vw; }
       
+      .mobile-branding {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+        color: var(--accent);
+        font-weight: 600;
+        font-size: 13px;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+      }
+      .left-stat { flex: 1; justify-content: flex-start; }
+      .right-stat { flex: 1; justify-content: flex-end; margin-left: 0; }
+      
+      .mobile-list-close {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text-muted);
+        font-size: 14px;
+        width: 20px;
+        height: 20px;
+        margin-left: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+        line-height: 1;
+      }
+      .mobile-list-close:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+
+      /* Hide map popups on mobile since info is visible in the bottom panel */
+      .leaflet-popup {
+        display: none !important;
+      }
+      
       #sidebar { 
         position: fixed; 
         top: auto; 
@@ -503,12 +556,25 @@
         left: 12px;
       }
 
+      #sidebar.detail-view {
+        height: auto;
+        bottom: -100%;
+      }
+      .sidebar-visible #sidebar.detail-view {
+        bottom: 0;
+      }
+      #sidebar.detail-view .sidebar-header,
+      #sidebar.detail-view .stats-bar,
+      #sidebar.detail-view .vessel-list {
+        display: none;
+      }
+
       /* Floating Search Overlay */
       .sidebar-header {
         position: fixed;
         top: 12px;
         left: 56px; /* leave room for main toggle */
-        right: 12px;
+        right: 60px; /* leave room for layers icon */
         width: auto;
         z-index: 1002;
         background: transparent;
@@ -522,23 +588,25 @@
         box-shadow: 0 4px 12px rgba(0,0,0,0.3);
       }
 
-      /* Full cover detail panel on mobile */
-      .detail-panel.visible {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
+      /* Auto-height detail panel on mobile */
+      #sidebar .detail-panel.visible {
+        position: relative;
+        top: auto;
+        left: auto;
+        right: auto;
+        bottom: auto;
+        height: auto;
         background: var(--bg-secondary);
         z-index: 10;
         border-radius: 16px 16px 0 0;
         overflow-y: auto;
+        padding-bottom: 24px;
       }
       
-      /* Move legend up */
+      /* Move legend up to clear topright zoom & layers controls */
       .map-legend {
         bottom: auto;
-        top: 60px;
+        top: 140px;
         right: 12px;
         padding: 8px 10px;
         background: rgba(15, 25, 35, 0.7);
@@ -546,7 +614,7 @@
       
       /* Move zoom controls */
       .leaflet-control-zoom {
-        margin-top: 60px !important;
+        margin-top: 10px !important;
       }
     }
   </style>
@@ -565,6 +633,7 @@
       <div class="sidebar-header">
         <div class="sidebar-title">
           <span class="icon">⚓</span> AIS Tracker
+          <span class="version">Version 0.2</span>
         </div>
         <div class="search-box">
           <input type="text" id="search" placeholder="Search vessel name or MMSI…" autocomplete="off"/>
@@ -572,12 +641,16 @@
       </div>
 
       <div class="stats-bar">
-        <div class="stat">
+        <div class="stat left-stat">
           <div class="stat-dot"></div>
           <span id="vessel-count">0</span> vessels
         </div>
-        <div class="stat" style="margin-left:auto">
+        <div class="mobile-branding">
+          ⚓&nbsp;&nbsp; AIS Tracker&nbsp;&nbsp;v0.2
+        </div>
+        <div class="stat right-stat">
           <span id="ws-status">Connecting…</span>
+          <button id="mobile-list-close" class="mobile-list-close" title="Close List">✕</button>
         </div>
       </div>
 
@@ -664,9 +737,12 @@
   // MAP SETUP
   // =============================================================================
   const map = L.map('map', {
-    zoomControl: true,
+    zoomControl: false,
     attributionControl: true,
   }).setView([60.5, 22.0], 7);
+
+  // Add zoom control manually
+  L.control.zoom({ position: 'topright' }).addTo(map);
 
   // OSM base layer
   const osmBase = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -1002,10 +1078,15 @@
     if (v) {
       const targetZoom = Math.max(map.getZoom(), 10);
       
-      // We want to offset the center so the vessel appears slightly lower
-      // on the screen, leaving room for the popup above it to be perfectly centered.
+      // We want to offset the center so the vessel is visible above/below UI popups.
       const targetPoint = map.project([v.data.lat, v.data.lon], targetZoom);
-      targetPoint.y -= 120; // Shift center up by 120px, meaning the vessel moves down
+      if (window.innerWidth <= 768) {
+        // On mobile, info panel is at the bottom, so shift center down by 150px (vessel moves UP)
+        targetPoint.y += 150;
+      } else {
+        // On desktop, shift up by 120px (vessel moves DOWN)
+        targetPoint.y -= 120;
+      }
       
       // On mobile, the sidebar comes from the bottom or takes full screen, 
       // but on desktop we might want to ensure it feels centered in the remaining space.
@@ -1019,13 +1100,16 @@
         animate: true,
         duration: 0.8,
       });
-      v.marker.openPopup();
+      if (window.innerWidth > 768) {
+        v.marker.openPopup();
+      }
       showSelectionRing([v.data.lat, v.data.lon]);
     }
 
     // Show detail panel
     updateDetailPanel(mmsi);
     document.getElementById('detail-panel').classList.add('visible');
+    document.getElementById('sidebar').classList.add('detail-view');
 
     // Ensure sidebar is open to show the detail panel
     document.getElementById('app').classList.add('sidebar-visible');
@@ -1075,6 +1159,7 @@
   document.getElementById('detail-close').addEventListener('click', () => {
     selectedMmsi = null;
     document.getElementById('detail-panel').classList.remove('visible');
+    document.getElementById('sidebar').classList.remove('detail-view');
     clearHistory();
     clearSelectionRing();
     document.querySelectorAll('.vessel-item.active').forEach(el => el.classList.remove('active'));
@@ -1166,6 +1251,12 @@
     sidebar.classList.toggle('collapsed');
     app.classList.toggle('sidebar-visible');
     // Leaflet needs to recalculate size
+    setTimeout(() => map.invalidateSize(), 350);
+  });
+
+  document.getElementById('mobile-list-close').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.add('collapsed');
+    document.getElementById('app').classList.remove('sidebar-visible');
     setTimeout(() => map.invalidateSize(), 350);
   });
 
