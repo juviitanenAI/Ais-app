@@ -3,10 +3,12 @@ import sqlite3
 import time
 from typing import Dict, Iterable, List, Optional, Tuple
 from threading import RLock
+import threading
 from .config import settings
 from . import state
  
 _db_lock = RLock()
+_local = threading.local()
 
 def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(settings.DB_PATH, check_same_thread=False)
@@ -14,9 +16,13 @@ def connect() -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
 
-db = connect()
+def get_db() -> sqlite3.Connection:
+    if not hasattr(_local, "conn"):
+        _local.conn = connect()
+    return _local.conn
 
 def init_schema() -> None:
+    db = get_db()
     with _db_lock, db:
         db.execute("""
         CREATE TABLE IF NOT EXISTS vessel_latest (
@@ -52,53 +58,46 @@ def init_schema() -> None:
 
 def upsert_latest(mmsi: str, loc: Optional[dict] = None, meta: Optional[dict] = None) -> None:
     """Päivitä viimeisin rivi yhdellä UPSERTillä."""
+    name = meta.get("name") if meta else None
+    call_sign = meta.get("callSign") if meta else None
+    vtype = meta.get("type") if meta else None
+    dest = meta.get("destination") if meta else None
+    meta_ts_ms = meta.get("timestamp") if meta else None
+
+    last_lat = loc.get("lat") if loc else None
+    last_lon = loc.get("lon") if loc else None
+    last_time = loc.get("time") if loc else None
+    sog = loc.get("sog") if loc else None
+    cog = loc.get("cog") if loc else None
+    heading = loc.get("heading") if loc else None
+
+    updated_ms = int(time.time() * 1000)
+
+    db = get_db()
     with _db_lock, db:
-        row = db.execute("""
-            SELECT name, call_sign, type, destination, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms
-            FROM vessel_latest WHERE mmsi=?
-        """, (mmsi,)).fetchone()
-
-        name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms = (row or (None,)*11)
-
-        if meta:
-            name = meta.get("name", name)
-            call_sign = meta.get("callSign", call_sign)
-            vtype = meta.get("type", vtype)
-            dest = meta.get("destination", dest)
-            meta_ts_ms = meta.get("timestamp", meta_ts_ms)
-
-        if loc:
-            last_lat = loc.get("lat", last_lat)
-            last_lon = loc.get("lon", last_lon)
-            last_time = loc.get("time", last_time)  # sekunteina
-            sog = loc.get("sog", sog)
-            cog = loc.get("cog", cog)
-            heading = loc.get("heading", heading)
-
-        updated_ms = int(time.time() * 1000)
-
         db.execute("""
         INSERT INTO vessel_latest
             (mmsi, name, call_sign, type, destination, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(mmsi) DO UPDATE SET
-            name=excluded.name,
-            call_sign=excluded.call_sign,
-            type=excluded.type,
-            destination=excluded.destination,
-            last_lat=excluded.last_lat,
-            last_lon=excluded.last_lon,
-            last_time=excluded.last_time,
-            sog=excluded.sog,
-            cog=excluded.cog,
-            heading=excluded.heading,
-            meta_ts_ms=excluded.meta_ts_ms,
-            updated_ms=excluded.updated_ms
+            name = COALESCE(excluded.name, vessel_latest.name),
+            call_sign = COALESCE(excluded.call_sign, vessel_latest.call_sign),
+            type = COALESCE(excluded.type, vessel_latest.type),
+            destination = COALESCE(excluded.destination, vessel_latest.destination),
+            last_lat = COALESCE(excluded.last_lat, vessel_latest.last_lat),
+            last_lon = COALESCE(excluded.last_lon, vessel_latest.last_lon),
+            last_time = COALESCE(excluded.last_time, vessel_latest.last_time),
+            sog = COALESCE(excluded.sog, vessel_latest.sog),
+            cog = COALESCE(excluded.cog, vessel_latest.cog),
+            heading = COALESCE(excluded.heading, vessel_latest.heading),
+            meta_ts_ms = COALESCE(excluded.meta_ts_ms, vessel_latest.meta_ts_ms),
+            updated_ms = excluded.updated_ms
         """, (mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms))
 
 def insert_snapshot_rows(rows: List[Tuple[str, int, float, float, Optional[float], Optional[float], Optional[float]]]) -> None:
     if not rows:
         return
+    db = get_db()
     with _db_lock, db:
         db.executemany("""
             INSERT OR IGNORE INTO vessel_samples (mmsi, ts, lat, lon, sog, cog, heading)
@@ -123,6 +122,7 @@ def insert_snapshot_for_mmsis(mmsis: Iterable[str], ts_floor: int) -> None:
 
 def prune_history(older_than_minutes: int = 24 * 60) -> None:
     cutoff = int(time.time()) - older_than_minutes * 60
+    db = get_db()
     with _db_lock, db:
         db.execute("DELETE FROM vessel_samples WHERE ts < ?", (cutoff,))
 
@@ -150,8 +150,9 @@ def query_vessels(q: Optional[str] = None, limit: int = 2000) -> List[Tuple[str,
         params = (like, like)
     sql += " ORDER BY name COLLATE NOCASE ASC LIMIT ?"
     params = params + (limit,)
-    with _db_lock:
-        rows = db.execute(sql, params).fetchall()
+    db = get_db()
+    # Read without lock to allow concurrency during heavy MQTT writes
+    rows = db.execute(sql, params).fetchall()
     return rows
 
 def query_history(mmsis: List[str], since_sec: int) -> Dict[str, List[dict]]:
@@ -165,8 +166,9 @@ def query_history(mmsis: List[str], since_sec: int) -> Dict[str, List[dict]]:
         ORDER BY mmsi, ts ASC
     """
     params = (*mmsis, since_sec)
-    with _db_lock:
-        rows = db.execute(sql, params).fetchall()
+    db = get_db()
+    # Read without lock to allow concurrency during heavy MQTT writes
+    rows = db.execute(sql, params).fetchall()
     out = {m: [] for m in mmsis}
     for m, ts, lat, lon, sog, cog, hdg in rows:
         out[m].append({"ts": ts, "lat": lat, "lon": lon, "sog": sog, "cog": cog, "heading": hdg})

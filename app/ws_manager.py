@@ -55,9 +55,10 @@ class WebSocketManager:
 
     async def broadcast_location(self, mmsi: str, message: dict):
         """Lähetä live-sijainti subscribe_all -klienteille sekä MMSI-tilaajille."""
+        import asyncio
         text = json.dumps(message)
-        stale = []
-        for ws in list(self.clients):
+        
+        async def send(ws: WebSocket):
             try:
                 is_subscribed = (
                     ws in self.subscribe_all_clients
@@ -66,10 +67,18 @@ class WebSocketManager:
                 if is_subscribed:
                     await ws.send_text(text)
             except Exception:
-                stale.append(ws)
-        for ws in stale:
-            self.unregister(ws)
-            try:
-                await ws.close()
-            except Exception:
-                pass
+                return ws
+            return None
+
+        # Gather all sends concurrently
+        tasks = [send(ws) for ws in list(self.clients)]
+        if tasks:
+            results = await asyncio.gather(*tasks)
+            stale = [ws for ws in results if ws is not None]
+            
+            for ws in stale:
+                self.unregister(ws)
+                try:
+                    await ws.close()
+                except Exception:
+                    pass

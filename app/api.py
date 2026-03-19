@@ -57,23 +57,25 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
     def api_vessels_live():
         result = []
         with state.latest_lock:
-            for mmsi, v in state.latest.items():
-                loc = v.get("loc")
-                if not loc or loc.get("lat") is None or loc.get("lon") is None:
-                    continue
-                meta = v.get("meta", {})
-                result.append({
-                    "mmsi": mmsi,
-                    "name": meta.get("name", ""),
-                    "type": meta.get("type"),
-                    "destination": meta.get("destination", ""),
-                    "lat": loc["lat"],
-                    "lon": loc["lon"],
-                    "sog": loc.get("sog"),
-                    "cog": loc.get("cog"),
-                    "heading": loc.get("heading"),
-                    "lastSeen": v.get("last_seen"),
-                })
+            vessels_copy = list(state.latest.items())
+            
+        for mmsi, v in vessels_copy:
+            loc = v.get("loc")
+            if not loc or loc.get("lat") is None or loc.get("lon") is None:
+                continue
+            meta = v.get("meta", {})
+            result.append({
+                "mmsi": mmsi,
+                "name": meta.get("name", ""),
+                "type": meta.get("type"),
+                "destination": meta.get("destination", ""),
+                "lat": loc["lat"],
+                "lon": loc["lon"],
+                "sog": loc.get("sog"),
+                "cog": loc.get("cog"),
+                "heading": loc.get("heading"),
+                "lastSeen": v.get("last_seen"),
+            })
         return JSONResponse(result)
 
     # --- API: history (15-min samples) ---

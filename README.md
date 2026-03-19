@@ -46,6 +46,19 @@ Open **http://localhost:8000** in your browser.
 
 > The app connects to Digitraffic's public MQTT broker on startup. Vessels will start appearing on the map within ~10–30 seconds as AIS data streams in.
 
+## Testing
+
+The project uses `pytest` for component testing. The testing suite primarily verifies the core schema and SQLite WAL lock resolution.
+
+```bash
+# Activate venv (if not already active)
+source venv/bin/activate
+
+# Execute all tests
+pytest tests/
+```
+Tests are also automatically run under the `make deploy` target to prevent deploying failing builds.
+
 ## Configuration
 
 All settings can be overridden via environment variables:
