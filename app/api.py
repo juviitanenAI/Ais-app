@@ -1,5 +1,5 @@
 # app/api.py
-from typing import List
+from typing import List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from pathlib import Path
@@ -48,7 +48,7 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
 
     # --- API: vessel catalog (name/MMSI search) ---
     @app.get("/api/vessels")
-    def api_vessels(q: str | None = Query(default=None, description="Filter by name or MMSI")):
+    def api_vessels(q: Optional[str] = Query(default=None, description="Filter by name or MMSI")):
         rows = db.query_vessels(q=q, limit=2000)
         return JSONResponse([{"mmsi": r[0], "name": r[1]} for r in rows])
 

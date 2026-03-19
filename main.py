@@ -41,9 +41,10 @@ def build_app_and_services():
     return app
 
 
-if __name__ == "__main__":
-    app = build_app_and_services()
+app = build_app_and_services()
 
+if __name__ == "__main__":
+    import uvicorn
     # Run Uvicorn (HTTP server) on the same asyncio loop
     # If port 8000 is busy, change port=8080 (or any free port)
     uvicorn.run(app, host="0.0.0.0", port=8000)
