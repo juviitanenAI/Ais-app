@@ -692,7 +692,7 @@
   // =============================================================================
   // CONFIG
   // =============================================================================
-  const APP_VERSION = '0.3';
+  const APP_VERSION = '0.5';
   const API_BASE = location.origin;
   const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
   const STALE_MINUTES = 30;
@@ -864,6 +864,20 @@
   // =============================================================================
   // INITIAL LOAD
   // =============================================================================
+  let currentSearchResults = [];
+
+  async function fetchSearchResults(query = '') {
+    try {
+      const q = query ? `?q=${encodeURIComponent(query)}` : '';
+      const res = await fetch(`${API_BASE}/api/vessels${q}`);
+      if (res.ok) {
+        currentSearchResults = await res.json();
+      }
+    } catch (e) {
+      console.error('[search] Failed to fetch:', e);
+    }
+  }
+
   async function loadLiveVessels() {
     try {
       const res = await fetch(`${API_BASE}/api/vessels/live`);
@@ -871,6 +885,8 @@
       const data = await res.json();
       data.forEach(v => addOrUpdateVessel(v));
       updateVesselCount();
+      
+      await fetchSearchResults(); // fetch initial catalog
       updateVesselList();
 
       // Remove loading overlay
@@ -968,9 +984,38 @@
     const listEl = document.getElementById('vessel-list');
     const searchVal = filter ?? document.getElementById('search').value.toLowerCase();
 
+    // Map of MMSI to display config
+    const combined = new Map();
+
+    // Add search results
+    for (const res of currentSearchResults) {
+      combined.set(res.mmsi, {
+        mmsi: res.mmsi,
+        name: res.name,
+        is_live: res.is_live,
+        latest_ts: res.latest_ts
+      });
+    }
+
+    // Add/update live vessels from map
+    for (const [mmsi, v] of Object.entries(vessels)) {
+      if (!combined.has(mmsi)) {
+        combined.set(mmsi, {
+          mmsi: mmsi,
+          name: v.data.name,
+          is_live: true,
+          latest_ts: Math.floor(v.lastUpdate / 1000)
+        });
+      } else {
+        const item = combined.get(mmsi);
+        item.is_live = true;
+        // if latest update is more recent, prefer it
+        item.latest_ts = Math.max(item.latest_ts || 0, Math.floor(v.lastUpdate / 1000));
+      }
+    }
+
     // Sort vessels: by name, unknowns last
-    const sorted = Object.entries(vessels)
-      .map(([mmsi, v]) => ({ mmsi, ...v.data }))
+    const sorted = Array.from(combined.values())
       .filter(v => {
         if (!searchVal) return true;
         return (v.name || '').toLowerCase().includes(searchVal)
@@ -987,15 +1032,25 @@
 
     let html = '';
     for (const v of toRender) {
-      const ti = vesselTypeInfo(v.type);
+      const liveData = vessels[v.mmsi]?.data;
+      const type = liveData ? liveData.type : null;
+      const ti = vesselTypeInfo(type);
       const isActive = v.mmsi === selectedMmsi;
+      
+      const speedStr = liveData && liveData.sog != null ? liveData.sog.toFixed(1) + ' kn' : '';
+      
+      const dotStyle = v.is_live ? `background:${ti.color}; box-shadow: 0 0 4px ${ti.color};` : `background:var(--text-muted); opacity:0.5;`;
+      
+      const latestDate = new Date(v.latest_ts * 1000);
+      const timeStr = v.latest_ts > 0 ? latestDate.toLocaleString('fi-FI', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : 'Unknown';
+
       html += `<div class="vessel-item${isActive ? ' active' : ''}" data-mmsi="${v.mmsi}">
-        <div class="vessel-dot" style="background:${ti.color}"></div>
+        <div class="vessel-dot" style="${dotStyle}"></div>
         <div class="vessel-info">
           <div class="vessel-name">${v.name || '(Unknown)'}</div>
-          <div class="vessel-mmsi">${v.mmsi}</div>
+          <div class="vessel-mmsi">${v.mmsi} <span style="font-size: 9px; color: var(--text-muted); margin-left: 6px;">Latest: ${timeStr}</span></div>
         </div>
-        <div class="vessel-speed">${v.sog != null ? v.sog.toFixed(1) + ' kn' : ''}</div>
+        <div class="vessel-speed">${speedStr}</div>
       </div>`;
     }
 
@@ -1027,11 +1082,14 @@
   document.getElementById('search').addEventListener('input', (e) => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
-      updateVesselList();
-      if (document.getElementById('search').value.trim() !== '') {
-        document.getElementById('app').classList.add('sidebar-visible');
-        document.getElementById('sidebar').classList.remove('collapsed');
-      }
+      const query = document.getElementById('search').value.trim();
+      fetchSearchResults(query).then(() => {
+        updateVesselList();
+        if (query !== '') {
+          document.getElementById('app').classList.add('sidebar-visible');
+          document.getElementById('sidebar').classList.remove('collapsed');
+        }
+      });
     }, 250);
   });
 
@@ -1079,22 +1137,13 @@
     if (v) {
       const targetZoom = Math.max(map.getZoom(), 10);
       
-      // We want to offset the center so the vessel is visible above/below UI popups.
       const targetPoint = map.project([v.data.lat, v.data.lon], targetZoom);
       if (window.innerWidth <= 768) {
-        // On mobile, info panel is at the bottom, so shift center down by 150px (vessel moves UP)
         targetPoint.y += 150;
       } else {
-        // On desktop, shift up by 120px (vessel moves DOWN)
         targetPoint.y -= 120;
       }
       
-      // On mobile, the sidebar comes from the bottom or takes full screen, 
-      // but on desktop we might want to ensure it feels centered in the remaining space.
-      // Since #map is a flex child, it's already sized correctly horizontally, 
-      // but we add a small right offset if needed.
-      targetPoint.x += 0; 
-
       const adjustedCenter = map.unproject(targetPoint, targetZoom);
       
       map.flyTo(adjustedCenter, targetZoom, {
@@ -1121,37 +1170,52 @@
   }
 
   function updateDetailPanel(mmsi) {
-    const v = vessels[mmsi];
-    if (!v) return;
-    const d = v.data;
-    const ti = vesselTypeInfo(d.type);
+    let name = '(Unknown)';
+    let typeLab = 'Unknown', typeCol = '#8899aa';
+    let speed = '—', hdg = '—', cog = '—', dest = '—';
 
-    document.getElementById('detail-name').textContent = d.name || '(Unknown)';
+    const v = vessels[mmsi];
+    if (v) {
+      const d = v.data;
+      const ti = vesselTypeInfo(d.type);
+      name = d.name || name;
+      typeLab = ti.label; typeCol = ti.color;
+      speed = (d.sog != null) ? d.sog.toFixed(1) + ' kn' : speed;
+      hdg = (d.heading != null) ? d.heading.toFixed(0) + '°' : hdg;
+      cog = (d.cog != null) ? d.cog.toFixed(0) + '°' : cog;
+      dest = d.destination || dest;
+    } else {
+      // Look up in currentSearchResults if it's historical
+      const match = currentSearchResults.find(r => r.mmsi === mmsi);
+      if (match) name = match.name || name;
+    }
+
+    document.getElementById('detail-name').textContent = name;
 
     document.getElementById('detail-grid').innerHTML = `
       <div class="detail-field">
         <div class="detail-label">MMSI</div>
-        <div class="detail-value">${d.mmsi}</div>
+        <div class="detail-value">${mmsi}</div>
       </div>
       <div class="detail-field">
         <div class="detail-label">Type</div>
-        <div class="detail-value" style="color:${ti.color}">${ti.label}</div>
+        <div class="detail-value" style="color:${typeCol}">${typeLab}</div>
       </div>
       <div class="detail-field">
         <div class="detail-label">Speed</div>
-        <div class="detail-value">${d.sog != null ? d.sog.toFixed(1) + ' kn' : '—'}</div>
+        <div class="detail-value">${speed}</div>
       </div>
       <div class="detail-field">
         <div class="detail-label">Heading</div>
-        <div class="detail-value">${d.heading != null ? d.heading.toFixed(0) + '°' : '—'}</div>
+        <div class="detail-value">${hdg}</div>
       </div>
       <div class="detail-field">
         <div class="detail-label">Course</div>
-        <div class="detail-value">${d.cog != null ? d.cog.toFixed(0) + '°' : '—'}</div>
+        <div class="detail-value">${cog}</div>
       </div>
       <div class="detail-field">
         <div class="detail-label">Destination</div>
-        <div class="detail-value">${d.destination || '—'}</div>
+        <div class="detail-value">${dest}</div>
       </div>
     `;
   }

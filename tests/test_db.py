@@ -45,3 +45,44 @@ def test_upsert_latest():
     assert row3[0] == 12.0
     assert row3[1] == "Test Vessel"
     assert row3[2] == 60.2
+
+def test_query_vessels():
+    from app.db import upsert_latest, get_db, query_vessels, insert_snapshot_rows
+    import time
+    
+    mmsi_live = "123456789"
+    mmsi_hist = "987654321"
+    
+    # 1. Insert live vessel
+    upsert_latest(mmsi_live, meta={"name": "LIVE BOAT", "timestamp": int(time.time() * 1000)})
+    
+    # 2. Insert historical vessel
+    ts_hist = int(time.time()) - 3600
+    insert_snapshot_rows([
+        (mmsi_hist, ts_hist, 60.0, 24.0, 10.0, 90.0, 90.0)
+    ])
+    
+    # 3. Query all
+    results = query_vessels(limit=10)
+    assert len(results) == 2
+    
+    live_res = next(r for r in results if r[0] == mmsi_live)
+    hist_res = next(r for r in results if r[0] == mmsi_hist)
+    
+    assert live_res[1] == "LIVE BOAT"
+    assert live_res[2] == 1  # is_live
+    assert live_res[3] >= 0
+    
+    assert hist_res[1] == ""
+    assert hist_res[2] == 0  # is_live
+    assert hist_res[3] == ts_hist
+    
+    # 4. Search by name
+    results_name = query_vessels(q="LIVE")
+    assert len(results_name) == 1
+    assert results_name[0][0] == mmsi_live
+    
+    # 5. Search by MMSI for historical
+    results_mmsi = query_vessels(q="9876")
+    assert len(results_mmsi) == 1
+    assert results_mmsi[0][0] == mmsi_hist

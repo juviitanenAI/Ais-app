@@ -141,15 +141,66 @@ def insert_snapshot_for_all(ts_floor: int) -> None:
             ))
     insert_snapshot_rows(out)
 
-def query_vessels(q: Optional[str] = None, limit: int = 2000) -> List[Tuple[str, str]]:
-    sql = "SELECT mmsi, COALESCE(name,'') FROM vessel_latest"
+def query_vessels(q: Optional[str] = None, limit: int = 2000) -> List[Tuple[str, str, int, int]]:
     params: Tuple = ()
     if q:
-        sql += " WHERE mmsi LIKE ? OR name LIKE ?"
         like = f"%{q}%"
-        params = (like, like)
-    sql += " ORDER BY name COLLATE NOCASE ASC LIMIT ?"
-    params = params + (limit,)
+        sql = """
+            WITH LatestMatch AS (
+                SELECT
+                    mmsi,
+                    COALESCE(name, '') as name,
+                    1 as is_live,
+                    COALESCE(CAST(updated_ms / 1000 AS INTEGER), 0) as latest_ts
+                FROM vessel_latest
+                WHERE mmsi LIKE ? OR name LIKE ?
+            ),
+            SampleMatch AS (
+                SELECT
+                    mmsi,
+                    '' as name,
+                    0 as is_live,
+                    MAX(ts) as latest_ts
+                FROM vessel_samples
+                WHERE mmsi LIKE ?
+                  AND mmsi NOT IN (SELECT mmsi FROM LatestMatch)
+                GROUP BY mmsi
+            )
+            SELECT mmsi, name, is_live, latest_ts FROM LatestMatch
+            UNION ALL
+            SELECT mmsi, name, is_live, latest_ts FROM SampleMatch
+            ORDER BY name COLLATE NOCASE ASC
+            LIMIT ?
+        """
+        params = (like, like, like, limit)
+    else:
+        sql = """
+            WITH LatestMatch AS (
+                SELECT
+                    mmsi,
+                    COALESCE(name, '') as name,
+                    1 as is_live,
+                    COALESCE(CAST(updated_ms / 1000 AS INTEGER), 0) as latest_ts
+                FROM vessel_latest
+            ),
+            SampleMatch AS (
+                SELECT
+                    mmsi,
+                    '' as name,
+                    0 as is_live,
+                    MAX(ts) as latest_ts
+                FROM vessel_samples
+                WHERE mmsi NOT IN (SELECT mmsi FROM LatestMatch)
+                GROUP BY mmsi
+            )
+            SELECT mmsi, name, is_live, latest_ts FROM LatestMatch
+            UNION ALL
+            SELECT mmsi, name, is_live, latest_ts FROM SampleMatch
+            ORDER BY name COLLATE NOCASE ASC
+            LIMIT ?
+        """
+        params = (limit,)
+
     db = get_db()
     # Read without lock to allow concurrency during heavy MQTT writes
     rows = db.execute(sql, params).fetchall()

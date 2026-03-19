@@ -50,7 +50,10 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
     @app.get("/api/vessels")
     def api_vessels(q: Optional[str] = Query(default=None, description="Filter by name or MMSI")):
         rows = db.query_vessels(q=q, limit=2000)
-        return JSONResponse([{"mmsi": r[0], "name": r[1]} for r in rows])
+        return JSONResponse([
+            {"mmsi": r[0], "name": r[1], "is_live": bool(r[2]), "latest_ts": r[3]} 
+            for r in rows
+        ])
 
     # --- API: all vessels with current position (for initial map load) ---
     @app.get("/api/vessels/live")
