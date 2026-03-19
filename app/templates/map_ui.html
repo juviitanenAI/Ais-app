@@ -473,8 +473,81 @@
     /* ---- Responsive ---- */
     @media (max-width: 768px) {
       :root { --sidebar-width: 100vw; }
-      #sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 1100; }
-      .sidebar-visible #sidebar-toggle { left: calc(100vw - 48px); }
+      
+      #sidebar { 
+        position: fixed; 
+        top: auto; 
+        bottom: -50vh; 
+        left: 0; 
+        width: 100vw;
+        height: 50vh; 
+        border: none;
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+        z-index: 1100; 
+        transform: none !important;
+        transition: bottom 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+      }
+      
+      #sidebar.collapsed {
+        bottom: -50vh;
+        transform: none !important;
+      }
+      
+      .sidebar-visible #sidebar {
+        bottom: 0;
+        transform: none !important;
+      }
+
+      .sidebar-visible #sidebar-toggle {
+        left: 12px;
+      }
+
+      /* Floating Search Overlay */
+      .sidebar-header {
+        position: fixed;
+        top: 12px;
+        left: 56px; /* leave room for main toggle */
+        right: 12px;
+        width: auto;
+        z-index: 1002;
+        background: transparent;
+        border: none;
+        padding: 0;
+      }
+      
+      .sidebar-title { display: none; }
+      
+      .search-box input {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      }
+
+      /* Full cover detail panel on mobile */
+      .detail-panel.visible {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: var(--bg-secondary);
+        z-index: 10;
+        border-radius: 16px 16px 0 0;
+        overflow-y: auto;
+      }
+      
+      /* Move legend up */
+      .map-legend {
+        bottom: auto;
+        top: 60px;
+        right: 12px;
+        padding: 8px 10px;
+        background: rgba(15, 25, 35, 0.7);
+      }
+      
+      /* Move zoom controls */
+      .leaflet-control-zoom {
+        margin-top: 60px !important;
+      }
     }
   </style>
 </head>
@@ -624,6 +697,13 @@
     { 'Nautical (OpenSeaMap)': seaMap },
     { position: 'topright' }
   ).addTo(map);
+
+  map.on('click', () => {
+    if (window.innerWidth <= 768 && document.getElementById('app').classList.contains('sidebar-visible')) {
+      document.getElementById('sidebar').classList.add('collapsed');
+      document.getElementById('app').classList.remove('sidebar-visible');
+    }
+  });
 
   // =============================================================================
   // STATE
@@ -869,7 +949,20 @@
   let searchTimer = null;
   document.getElementById('search').addEventListener('input', (e) => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => updateVesselList(), 250);
+    searchTimer = setTimeout(() => {
+      updateVesselList();
+      if (document.getElementById('search').value.trim() !== '') {
+        document.getElementById('app').classList.add('sidebar-visible');
+        document.getElementById('sidebar').classList.remove('collapsed');
+      }
+    }, 250);
+  });
+
+  document.getElementById('search').addEventListener('focus', () => {
+    if (window.innerWidth <= 768) {
+      document.getElementById('app').classList.add('sidebar-visible');
+      document.getElementById('sidebar').classList.remove('collapsed');
+    }
   });
 
   // =============================================================================
@@ -933,6 +1026,10 @@
     // Show detail panel
     updateDetailPanel(mmsi);
     document.getElementById('detail-panel').classList.add('visible');
+
+    // Ensure sidebar is open to show the detail panel
+    document.getElementById('app').classList.add('sidebar-visible');
+    document.getElementById('sidebar').classList.remove('collapsed');
 
     // Load history
     loadHistory(mmsi);
