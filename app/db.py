@@ -126,6 +126,21 @@ def prune_history(older_than_minutes: int = 24 * 60) -> None:
     with _db_lock, db:
         db.execute("DELETE FROM vessel_samples WHERE ts < ?", (cutoff,))
 
+def insert_snapshot_for_all(ts_floor: int) -> None:
+    """Kerää state.latestistä rivit kaikista MMSI:stä ja kirjoita 15 min näyte."""
+    out: List[Tuple[str, int, float, float, Optional[float], Optional[float], Optional[float]]] = []
+    with state.latest_lock:
+        for mmsi, v in state.latest.items():
+            if not v or not v.get("loc"):  # ei vielä sijaintia
+                continue
+            loc = v["loc"]
+            out.append((
+                mmsi, ts_floor,
+                loc.get("lat"), loc.get("lon"),
+                loc.get("sog"), loc.get("cog"), loc.get("heading")
+            ))
+    insert_snapshot_rows(out)
+
 def query_vessels(q: Optional[str] = None, limit: int = 2000) -> List[Tuple[str, str]]:
     sql = "SELECT mmsi, COALESCE(name,'') FROM vessel_latest"
     params: Tuple = ()

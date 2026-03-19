@@ -11,8 +11,8 @@ class Settings:
     BROKER_PATH: str = os.getenv("BROKER_PATH", "/mqtt")      # WebSocket path (docs)
     USE_SSL: bool = True
 
-    # Snapshots: 15 min välein, 3 h historia UI:lle
-    SNAPSHOT_INTERVAL_SEC: int = int(os.getenv("SNAPSHOT_INTERVAL_SEC", str(15 * 60)))
+    # Snapshots: 15 sek välein, 3 h historia UI:lle
+    SNAPSHOT_INTERVAL_SEC: int = int(os.getenv("SNAPSHOT_INTERVAL_SEC", str(15)))
     HISTORY_WINDOW_MINUTES: int = int(os.getenv("HISTORY_WINDOW_MINUTES", str(3 * 60)))
 
     # Tee välitön ”aloitusnäyte” kun alus otetaan seurantaan (deduplikoidaan UNIQUE-indeksillä)

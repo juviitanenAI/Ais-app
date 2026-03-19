@@ -7,7 +7,7 @@ Real-time AIS ship tracking on nautical charts. Receives live vessel positions v
 - **Live vessel positions** — all ships in the Baltic/Finland BBOX shown simultaneously
 - **Nautical charts** — OpenSeaMap overlay on dark/light basemap
 - **Ship type icons** — color-coded, rotated by heading (cargo, tanker, passenger, fishing)
-- **Historical trails** — 24h position history at 15-min resolution
+- **Historical trails** — 24h position history at 15-sec resolution
 - **Search & detail** — sidebar with vessel search, metadata, and speed/heading info
 - **WebSocket push** — real-time updates, no polling
 
@@ -50,16 +50,16 @@ Open **http://localhost:8000** in your browser.
 
 All settings can be overridden via environment variables:
 
-| Variable | Default | Description |
-|---|---|---|
-| `BROKER_HOST` | `meri.digitraffic.fi` | MQTT broker hostname |
-| `BROKER_PORT` | `443` | MQTT broker port |
-| `BROKER_PATH` | `/mqtt` | WebSocket path |
-| `SNAPSHOT_INTERVAL_SEC` | `900` (15 min) | How often position snapshots are taken |
-| `HISTORY_WINDOW_MINUTES` | `180` (3h) | Default history window for the API |
-| `STALE_VESSEL_MINUTES` | `30` | Vessels older than this are dimmed |
-| `BBOX_LON_MIN` / `BBOX_LAT_MIN` / `BBOX_LON_MAX` / `BBOX_LAT_MAX` | `16.0 / 58.0 / 32.0 / 66.0` | Bounding box filter (Finland/Baltics) |
-| `DB_PATH` | `vessels.sqlite` | SQLite database file path |
+| Variable                                                          | Default                     | Description                            |
+| ----------------------------------------------------------------- | --------------------------- | -------------------------------------- |
+| `BROKER_HOST`                                                     | `meri.digitraffic.fi`       | MQTT broker hostname                   |
+| `BROKER_PORT`                                                     | `443`                       | MQTT broker port                       |
+| `BROKER_PATH`                                                     | `/mqtt`                     | WebSocket path                         |
+| `SNAPSHOT_INTERVAL_SEC`                                           | `900` (15 min)              | How often position snapshots are taken |
+| `HISTORY_WINDOW_MINUTES`                                          | `180` (3h)                  | Default history window for the API     |
+| `STALE_VESSEL_MINUTES`                                            | `30`                        | Vessels older than this are dimmed     |
+| `BBOX_LON_MIN` / `BBOX_LAT_MIN` / `BBOX_LON_MAX` / `BBOX_LAT_MAX` | `16.0 / 58.0 / 32.0 / 66.0` | Bounding box filter (Finland/Baltics)  |
+| `DB_PATH`                                                         | `vessels.sqlite`            | SQLite database file path              |
 
 Example with custom settings:
 
@@ -69,14 +69,14 @@ BBOX_LAT_MIN=59.0 BBOX_LAT_MAX=61.0 python main.py
 
 ## API Endpoints
 
-| Endpoint | Description |
-|---|---|
-| `GET /` | Map UI |
-| `GET /simple` | Legacy simple UI |
-| `GET /api/vessels?q=<search>` | Vessel catalog (name/MMSI search) |
-| `GET /api/vessels/live` | All vessels with current position |
-| `GET /api/history?mmsi=<mmsi>&minutes=180` | Historical position samples |
-| `WS /ws` | WebSocket for live updates |
+| Endpoint                                   | Description                       |
+| ------------------------------------------ | --------------------------------- |
+| `GET /`                                    | Map UI                            |
+| `GET /simple`                              | Legacy simple UI                  |
+| `GET /api/vessels?q=<search>`              | Vessel catalog (name/MMSI search) |
+| `GET /api/vessels/live`                    | All vessels with current position |
+| `GET /api/history?mmsi=<mmsi>&minutes=180` | Historical position samples       |
+| `WS /ws`                                   | WebSocket for live updates        |
 
 ## Architecture
 

@@ -415,6 +415,23 @@
       transition: transform 0.8s ease;
     }
 
+    /* ---- Selected vessel pulse ring ---- */
+    @keyframes selectPulse {
+      0%   { transform: scale(1);   opacity: 0.7; }
+      50%  { transform: scale(1.6); opacity: 0.15; }
+      100% { transform: scale(1);   opacity: 0.7; }
+    }
+
+    .selected-ring {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 12px var(--accent), inset 0 0 8px rgba(0,212,255,0.15);
+      animation: selectPulse 2s ease-in-out infinite;
+      pointer-events: none;
+    }
+
     /* ---- Loading overlay ---- */
     #loading-overlay {
       position: fixed;
@@ -613,6 +630,7 @@
   // =============================================================================
   const vessels = {};         // mmsi -> { marker, data, lastUpdate }
   let selectedMmsi = null;
+  let selectionRing = null;   // Leaflet marker for the pulsing ring
   let historyPolyline = null;
   let historyMinutes = 180;
   let ws = null;
@@ -634,6 +652,10 @@
       existing.marker.setLatLng([v.lat, v.lon]);
       existing.marker.setIcon(shipIcon(color, heading));
       existing.marker.setOpacity(1);
+      // Keep selection ring following the selected vessel
+      if (mmsi === selectedMmsi && selectionRing) {
+        selectionRing.setLatLng([v.lat, v.lon]);
+      }
     } else {
       // Create new
       const marker = L.marker([v.lat, v.lon], {
@@ -643,7 +665,7 @@
 
       marker.on('click', () => selectVessel(mmsi));
 
-      marker.bindPopup('', { maxWidth: 240 });
+      marker.bindPopup('', { maxWidth: 240, autoPan: false });
       marker.on('popupopen', () => {
         const d = vessels[mmsi]?.data;
         if (!d) return;
@@ -853,6 +875,27 @@
   // =============================================================================
   // SIDEBAR: DETAIL PANEL
   // =============================================================================
+  function clearSelectionRing() {
+    if (selectionRing) {
+      map.removeLayer(selectionRing);
+      selectionRing = null;
+    }
+  }
+
+  function showSelectionRing(latlng) {
+    clearSelectionRing();
+    selectionRing = L.marker(latlng, {
+      icon: L.divIcon({
+        className: '',
+        html: '<div class="selected-ring"></div>',
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+      }),
+      interactive: false,
+      zIndexOffset: -1,
+    }).addTo(map);
+  }
+
   function selectVessel(mmsi) {
     selectedMmsi = mmsi;
 
@@ -861,11 +904,30 @@
       el.classList.toggle('active', el.dataset.mmsi === mmsi);
     });
 
-    // Pan map
+    // Pan map & show selection ring
     const v = vessels[mmsi];
     if (v) {
-      map.setView([v.data.lat, v.data.lon], Math.max(map.getZoom(), 10), { animate: true });
+      const targetZoom = Math.max(map.getZoom(), 10);
+      
+      // We want to offset the center so the vessel appears slightly lower
+      // on the screen, leaving room for the popup above it to be perfectly centered.
+      const targetPoint = map.project([v.data.lat, v.data.lon], targetZoom);
+      targetPoint.y -= 120; // Shift center up by 120px, meaning the vessel moves down
+      
+      // On mobile, the sidebar comes from the bottom or takes full screen, 
+      // but on desktop we might want to ensure it feels centered in the remaining space.
+      // Since #map is a flex child, it's already sized correctly horizontally, 
+      // but we add a small right offset if needed.
+      targetPoint.x += 0; 
+
+      const adjustedCenter = map.unproject(targetPoint, targetZoom);
+      
+      map.flyTo(adjustedCenter, targetZoom, {
+        animate: true,
+        duration: 0.8,
+      });
       v.marker.openPopup();
+      showSelectionRing([v.data.lat, v.data.lon]);
     }
 
     // Show detail panel
@@ -917,6 +979,7 @@
     selectedMmsi = null;
     document.getElementById('detail-panel').classList.remove('visible');
     clearHistory();
+    clearSelectionRing();
     document.querySelectorAll('.vessel-item.active').forEach(el => el.classList.remove('active'));
   });
 

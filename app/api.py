@@ -4,14 +4,34 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from pathlib import Path
 
+from contextlib import asynccontextmanager
+import asyncio
+
 from .config import settings
 from . import db, state
 from .ws_manager import WebSocketManager
+from .mqtt_client import MqttService
+from .snapshot import sampler_task
 
 TEMPLATES = Path(__file__).parent / "templates"
 
 def create_app(ws_mgr: WebSocketManager) -> FastAPI:
-    app = FastAPI()
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        loop = asyncio.get_running_loop()
+        
+        # Start MQTT client
+        mqtt = MqttService(ws_mgr, loop)
+        mqtt.start()
+
+        # Start sampler task
+        s_task = asyncio.create_task(sampler_task(ws_mgr))
+        
+        yield
+        
+        s_task.cancel()
+
+    app = FastAPI(lifespan=lifespan)
 
     # --- UI ---
     @app.get("/")
