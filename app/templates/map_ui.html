@@ -633,7 +633,7 @@
       <div class="sidebar-header">
         <div class="sidebar-title">
           <span class="icon">⚓</span> AIS Tracker
-          <span class="version">Version 0.2</span>
+          <span class="version">Version <span class="app-version">0.2</span></span>
         </div>
         <div class="search-box">
           <input type="text" id="search" placeholder="Search vessel name or MMSI…" autocomplete="off"/>
@@ -646,7 +646,7 @@
           <span id="vessel-count">0</span> vessels
         </div>
         <div class="mobile-branding">
-          ⚓&nbsp;&nbsp; AIS Tracker&nbsp;&nbsp;v0.2
+          ⚓&nbsp;&nbsp; AIS Tracker&nbsp;&nbsp;v<span class="app-version">0.2</span>
         </div>
         <div class="stat right-stat">
           <span id="ws-status">Connecting…</span>
@@ -692,6 +692,7 @@
   // =============================================================================
   // CONFIG
   // =============================================================================
+  const APP_VERSION = '0.3';
   const API_BASE = location.origin;
   const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
   const STALE_MINUTES = 30;
@@ -1263,6 +1264,8 @@
   // =============================================================================
   // INIT
   // =============================================================================
+  document.querySelectorAll('.app-version').forEach(el => el.textContent = APP_VERSION);
+
   loadLiveVessels().then(() => {
     connectWebSocket();
   });
