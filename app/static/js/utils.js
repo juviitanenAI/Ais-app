@@ -43,7 +43,7 @@ export function createShipSvg(color, heading, isPinned = false, isActive = false
   if (isActive) classes.push('active');
   
   return `<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"
-    class="${classes.join(' ')}" style="transform:rotate(${rot}deg)">
+    class="${classes.join(' ')}" style="transform:rotate(${rot}deg)${isActive ? ' scale(1.2)' : ''}; transform-origin: center;">
     <polygon points="12,2 20,20 12,16 4,20" fill="${color}" stroke="rgba(0,0,0,0.6)"
       stroke-width="1.2" opacity="0.95"/>
   </svg>`;

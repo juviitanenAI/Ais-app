@@ -38,7 +38,7 @@ export function clearSelectionRing() {
 export function showSelectionRing(latlng) {
   clearSelectionRing();
   state.selectionRing = L.marker(latlng, {
-    icon: L.divIcon({ className: '', html: '<div class="selected-ring"></div>', iconSize: [36, 36], iconAnchor: [18, 18] }),
+    icon: L.divIcon({ className: '', html: '<div class="selected-ring"></div>', iconSize: [48, 48], iconAnchor: [24, 24] }),
     interactive: false,
     zIndexOffset: -1,
   }).addTo(map);
