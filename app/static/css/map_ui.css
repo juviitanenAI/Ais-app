@@ -464,15 +464,11 @@
 
     /* ---- Map controls overlay ---- */
     .map-legend {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
       background: rgba(15, 25, 35, 0.9);
       backdrop-filter: blur(10px);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 0;
-      z-index: 999;
       font-size: 11px;
       overflow: hidden;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -764,15 +760,6 @@
         border-radius: 16px 16px 0 0;
         overflow-y: auto;
         padding-bottom: 24px;
-      }
-      
-      /* Move legend up to clear topright zoom & layers controls */
-      .map-legend {
-        bottom: auto;
-        top: 140px;
-        right: 12px;
-        padding: 8px 10px;
-        background: rgba(15, 25, 35, 0.7);
       }
       
       /* Move zoom controls */

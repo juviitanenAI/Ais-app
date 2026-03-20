@@ -3,15 +3,23 @@ import { vesselTypeInfo, shipIcon } from './utils.js';
 import { selectVessel } from './ui.js';
 import { map } from './map_instance.js';
 
-L.control.zoom({ position: 'topright' }).addTo(map);
+// Custom Leaflet control for the vessel type legend
+const LegendControl = L.Control.extend({
+  onAdd: function() {
+    const el = document.getElementById('map-legend');
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+    return el;
+  }
+});
+new LegendControl({ position: 'topright' }).addTo(map);
 
 const osmBase = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://openstreetmap.org">OSM</a>' });
-const darkBase = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, attribution: '&copy; <a href="https://carto.com">CARTO</a>' });
 const seaMap = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; <a href="https://openseamap.org">OpenSeaMap</a>', opacity: 0.8 });
 
 osmBase.addTo(map);
 seaMap.addTo(map);
-L.control.layers({ 'Light': osmBase, 'Dark': darkBase }, { 'Nautical (OpenSeaMap)': seaMap }, { position: 'topright' }).addTo(map);
+L.control.layers({}, { 'Nautical (OpenSeaMap)': seaMap }, { position: 'topright' }).addTo(map);
 
 map.on('click', () => {
   if (window.innerWidth <= 768 && document.getElementById('app').classList.contains('sidebar-visible')) {
