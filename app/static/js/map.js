@@ -251,6 +251,18 @@ export function zoomToFitSelection() {
     }
   });
 
+  // Add history points for active and selected vessels
+  const mmsisToFit = new Set(Array.from(state.selectedMmsis));
+  if (state.activeMmsi) mmsisToFit.add(state.activeMmsi);
+
+  mmsisToFit.forEach(mmsi => {
+    const layer = state.historyLayers.get(mmsi);
+    if (layer && layer.polyline) {
+      const latlngs = layer.polyline.getLatLngs();
+      latlngs.forEach(ll => coords.push([ll.lat, ll.lng]));
+    }
+  });
+
   if (coords.length === 0) return;
 
   if (coords.length === 1) {

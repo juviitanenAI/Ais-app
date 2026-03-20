@@ -380,12 +380,19 @@ export function initUIListeners() {
   });
 
   document.querySelectorAll('.history-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       document.querySelectorAll('.history-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.historyMinutes = parseInt(btn.dataset.minutes);
-      if (state.activeMmsi) loadAndRenderHistory(state.activeMmsi);
-      state.selectedMmsis.forEach(m => loadAndRenderHistory(m));
+      
+      const promises = [];
+      if (state.activeMmsi) promises.push(loadAndRenderHistory(state.activeMmsi));
+      state.selectedMmsis.forEach(m => {
+        if (m !== state.activeMmsi) promises.push(loadAndRenderHistory(m));
+      });
+      
+      await Promise.all(promises);
+      zoomToFitSelection();
     });
   });
 
