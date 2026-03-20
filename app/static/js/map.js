@@ -166,6 +166,7 @@ export function updateVesselMarkerStyle(mmsi) {
   const isPinned = state.selectedMmsis.has(mmsi);
   const isActive = (mmsi === state.activeMmsi);
   v.marker.setIcon(shipIcon(color, heading, isPinned, isActive));
+  updateMarkerVisibility(v.marker, v.data);
 }
 
 function updateMarkerVisibility(marker, v) {

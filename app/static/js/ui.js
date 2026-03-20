@@ -150,6 +150,25 @@ export function updateResultsHeaderVisibility() {
 }
 
 export function selectVessel(mmsi, pin = true) {
+  const isAlreadyActive = (state.activeMmsi === mmsi);
+  
+  // If it's already active and we're just clicking it in the list (not pinning), deselect it.
+  if (isAlreadyActive && !pin) {
+    state.activeMmsi = null;
+    if (!state.selectedMmsis.has(mmsi)) {
+      clearHistory(mmsi);
+    } else {
+      loadAndRenderHistory(mmsi); // Re-render as pinned but not active
+    }
+    updateVesselMarkerStyle(mmsi);
+    updateVesselList();
+    document.getElementById('detail-panel').classList.remove('visible');
+    document.getElementById('sidebar').classList.remove('detail-view');
+    clearSelectionRing();
+    updateResultsHeaderVisibility();
+    return;
+  }
+
   const prevActive = state.activeMmsi;
   state.activeMmsi = mmsi;
   
@@ -358,25 +377,9 @@ export function initUIListeners() {
   });
 
   document.getElementById('detail-close').addEventListener('click', () => {
-    const mmsi = state.activeMmsi;
-    state.activeMmsi = null;
-    if (state.historyPollTimer) {
-      clearInterval(state.historyPollTimer);
-      state.historyPollTimer = null;
-    }
     document.getElementById('detail-panel').classList.remove('visible');
     document.getElementById('sidebar').classList.remove('detail-view');
-    
-    if (mmsi) {
-      loadAndRenderHistory(mmsi); // Simplified pin version
-      updateVesselMarkerStyle(mmsi);
-    }
-
-    updateVesselList();
-    updateResultsHeaderVisibility();
-
-    clearSelectionRing();
-    document.querySelectorAll('.vessel-item.active').forEach(el => el.classList.remove('active'));
+    // We only hide the panel, but keep the ship active/selected in the list.
   });
 
   document.querySelectorAll('.history-btn').forEach(btn => {
