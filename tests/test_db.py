@@ -86,3 +86,31 @@ def test_query_vessels():
     results_mmsi = query_vessels(q="9876")
     assert len(results_mmsi) == 1
     assert results_mmsi[0][0] == mmsi_hist
+
+def test_prune_history():
+    from app.db import insert_snapshot_rows, prune_history, get_db
+    import time
+    
+    now = int(time.time())
+    mmsi1 = "OLD_VESSEL"
+    mmsi2 = "NEW_VESSEL"
+    
+    # 25 hours ago
+    ts_old = now - (25 * 3600)
+    # 1 hour ago
+    ts_new = now - (1 * 3600)
+    
+    insert_snapshot_rows([
+        (mmsi1, ts_old, 60.0, 24.0, 10.0, 90.0, 90.0),
+        (mmsi2, ts_new, 60.1, 24.1, 11.0, 95.0, 95.0)
+    ])
+    
+    # Prune older than 24 hours (1440 min)
+    prune_history(older_than_minutes=24 * 60)
+    
+    conn = get_db()
+    rows = conn.execute("SELECT mmsi FROM vessel_samples").fetchall()
+    mmsis = [r[0] for r in rows]
+    
+    assert mmsi2 in mmsis
+    assert mmsi1 not in mmsis

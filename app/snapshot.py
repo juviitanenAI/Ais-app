@@ -21,7 +21,7 @@ async def sampler_task(ws_mgr: WebSocketManager):
             
             ts_floor = floor_to_interval(int(time.time()), settings.SNAPSHOT_INTERVAL_SEC)
             db.insert_snapshot_for_all(ts_floor)
-            db.prune_history(older_than_minutes=24*60)
+            db.prune_history(older_than_minutes=settings.SNAPSHOT_RETENTION_MINUTES)
             print(f"[SNAPSHOT] Wrote snapshot at {ts_floor}")
         except Exception as e:
             print(f"[SNAPSHOT] Error in sampler_task: {e}")

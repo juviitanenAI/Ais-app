@@ -14,6 +14,7 @@ class Settings:
     # Snapshots: 15 sek välein, 3 h historia UI:lle defaulttina
     SNAPSHOT_INTERVAL_SEC: int = int(os.getenv("SNAPSHOT_INTERVAL_SEC", str(30)))
     HISTORY_WINDOW_MINUTES: int = int(os.getenv("HISTORY_WINDOW_MINUTES", str(3 * 60)))
+    SNAPSHOT_RETENTION_MINUTES: int = int(os.getenv("SNAPSHOT_RETENTION_MINUTES", str(24 * 60)))
 
     # Tee välitön ”aloitusnäyte” kun alus otetaan seurantaan (deduplikoidaan UNIQUE-indeksillä)
     INITIAL_SNAPSHOT_ON_SUBSCRIBE: bool = os.getenv("INITIAL_SNAPSHOT_ON_SUBSCRIBE", "true").lower() == "true"
