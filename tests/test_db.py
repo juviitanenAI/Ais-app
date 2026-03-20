@@ -114,3 +114,27 @@ def test_prune_history():
     
     assert mmsi2 in mmsis
     assert mmsi1 not in mmsis
+def test_query_vessels_with_category():
+    from app.db import upsert_latest, upsert_vessel_type, query_vessels
+    
+    # 1. Setup vessel types
+    upsert_vessel_type("70", "Cargo", "Cargo", "#4a9eff", "cargo")
+    upsert_vessel_type("80", "Tanker", "Tanker", "#ff6b6b", "tanker")
+    
+    # 2. Insert vessels
+    upsert_latest("111", meta={"name": "CARGO SHIP", "type": 70})
+    upsert_latest("222", meta={"name": "TANKER SHIP", "type": 80})
+    
+    # 3. Query by cargo
+    res_cargo = query_vessels(category="cargo")
+    assert len(res_cargo) == 1
+    assert res_cargo[0][0] == "111"
+    
+    # 4. Query by tanker
+    res_tanker = query_vessels(category="tanker")
+    assert len(res_tanker) == 1
+    assert res_tanker[0][0] == "222"
+    
+    # 5. Query both (no category)
+    res_all = query_vessels()
+    assert len(res_all) == 2

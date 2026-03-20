@@ -105,6 +105,40 @@ def upsert_latest(mmsi: str, loc: Optional[dict] = None, meta: Optional[dict] = 
             updated_ms = excluded.updated_ms
         """, (mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms))
 
+def load_latest_into_state() -> None:
+    """Lataa viimeisimmät tunnetut sijainnit tietokannasta state.latest-sanakirjaan."""
+    db = get_db()
+    # Lataamme vain viimeisen 24h aikana nähdyt tai kaikki?
+    # Käyttäjän toiveen mukaan "since we might be missing a bunch".
+    # Otetaan kaikki vessel_latest -taulun rivit.
+    rows = db.execute("""
+        SELECT mmsi, name, call_sign, type, destination, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms
+        FROM vessel_latest
+    """).fetchall()
+    
+    with state.latest_lock:
+        for r in rows:
+            mmsi = r[0]
+            if mmsi in state.latest:
+                continue
+            
+            # r[5] is last_lat, r[6] is last_lon
+            loc = None
+            if r[5] is not None and r[6] is not None:
+                loc = {
+                    "lat": r[5], "lon": r[6], "time": r[7],
+                    "sog": r[8], "cog": r[9], "heading": r[10]
+                }
+            
+            state.latest[mmsi] = {
+                "loc": loc,
+                "meta": {
+                    "name": r[1], "callSign": r[2], "type": r[3],
+                    "destination": r[4], "timestamp": r[11]
+                },
+                "last_seen": r[7] or (r[11] // 1000 if r[11] else int(time.time()))
+            }
+
 def upsert_vessel_type(code: str, desc_fi: str, desc_en: str, color: str, category: str) -> None:
     db = get_db()
     with _db_lock, db:
@@ -170,11 +204,20 @@ def insert_snapshot_for_all(ts_floor: int) -> None:
             ))
     insert_snapshot_rows(out)
 
-def query_vessels(q: Optional[str] = None, limit: int = 2000) -> List[Tuple[str, str, int, int]]:
-    params: Tuple = ()
+def query_vessels(q: Optional[str] = None, category: Optional[str] = None, limit: int = 2000) -> List[Tuple[str, str, int, int]]:
+    params: List = []
+    
+    # Base filter for category if provided
+    cat_filter_latest = ""
+    cat_filter_samples = ""
+    if category:
+        cat_filter_latest = "AND type IN (SELECT code FROM vessel_types WHERE category = ?)"
+        cat_filter_samples = "AND mmsi IN (SELECT mmsi FROM vessel_latest WHERE type IN (SELECT code FROM vessel_types WHERE category = ?))"
+        params.append(category)
+
     if q:
         like = f"%{q}%"
-        sql = """
+        sql = f"""
             WITH LatestMatch AS (
                 SELECT
                     mmsi,
@@ -182,7 +225,7 @@ def query_vessels(q: Optional[str] = None, limit: int = 2000) -> List[Tuple[str,
                     1 as is_live,
                     COALESCE(CAST(updated_ms / 1000 AS INTEGER), 0) as latest_ts
                 FROM vessel_latest
-                WHERE mmsi LIKE ? OR name LIKE ?
+                WHERE (mmsi LIKE ? OR name LIKE ?) {cat_filter_latest}
             ),
             SampleMatch AS (
                 SELECT
@@ -193,6 +236,7 @@ def query_vessels(q: Optional[str] = None, limit: int = 2000) -> List[Tuple[str,
                 FROM vessel_samples
                 WHERE mmsi LIKE ?
                   AND mmsi NOT IN (SELECT mmsi FROM LatestMatch)
+                  {cat_filter_samples}
                 GROUP BY mmsi
             )
             SELECT mmsi, name, is_live, latest_ts FROM LatestMatch
@@ -201,9 +245,12 @@ def query_vessels(q: Optional[str] = None, limit: int = 2000) -> List[Tuple[str,
             ORDER BY name COLLATE NOCASE ASC
             LIMIT ?
         """
-        params = (like, like, like, limit)
+        params.extend([like, like, like])
+        if category:
+            params.append(category) # For SampleMatch cat_filter
+        params.append(limit)
     else:
-        sql = """
+        sql = f"""
             WITH LatestMatch AS (
                 SELECT
                     mmsi,
@@ -211,6 +258,7 @@ def query_vessels(q: Optional[str] = None, limit: int = 2000) -> List[Tuple[str,
                     1 as is_live,
                     COALESCE(CAST(updated_ms / 1000 AS INTEGER), 0) as latest_ts
                 FROM vessel_latest
+                WHERE 1=1 {cat_filter_latest}
             ),
             SampleMatch AS (
                 SELECT
@@ -220,6 +268,7 @@ def query_vessels(q: Optional[str] = None, limit: int = 2000) -> List[Tuple[str,
                     MAX(ts) as latest_ts
                 FROM vessel_samples
                 WHERE mmsi NOT IN (SELECT mmsi FROM LatestMatch)
+                  {cat_filter_samples}
                 GROUP BY mmsi
             )
             SELECT mmsi, name, is_live, latest_ts FROM LatestMatch
@@ -228,7 +277,9 @@ def query_vessels(q: Optional[str] = None, limit: int = 2000) -> List[Tuple[str,
             ORDER BY name COLLATE NOCASE ASC
             LIMIT ?
         """
-        params = (limit,)
+        if category:
+            params.append(category) # For SampleMatch cat_filter
+        params.append(limit)
 
     db = get_db()
     # Read without lock to allow concurrency during heavy MQTT writes

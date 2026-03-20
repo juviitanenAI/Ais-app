@@ -53,6 +53,20 @@ class MqttService:
                 if kind == "metadata":
                     v["meta"].update(payload)
                     db.upsert_latest(mmsi, loc=None, meta=payload)
+                    # Broadcast meta update
+                    vtype_code = str(payload.get("type") or v["meta"].get("type", ""))
+                    style = state.vessel_type_cache.get(vtype_code, {})
+                    message = {
+                        "type": "metadata",
+                        "mmsi": mmsi,
+                        "meta": payload,
+                        "vtype_info": {
+                            "color": style.get("color", "#8899aa"),
+                            "label": style.get("desc_en") or style.get("desc_fi") or "Other",
+                            "category": style.get("category", "other")
+                        }
+                    }
+                    asyncio.run_coroutine_threadsafe(self.ws_mgr.broadcast_location(mmsi, message), self.loop)
 
                 elif kind == "location":
                     lat = payload.get("lat"); lon = payload.get("lon")

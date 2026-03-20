@@ -1,10 +1,23 @@
+import { state } from './state.js';
+
 export function vesselTypeInfo(typeCode, vtypeInfo = null) {
-  // If we have dynamic info from the API, use it!
+  // 1. If we have direct info passed, use it
   if (vtypeInfo && vtypeInfo.color) {
     return { 
       label: vtypeInfo.label || 'Unknown', 
       color: vtypeInfo.color, 
       category: vtypeInfo.category || 'other' 
+    };
+  }
+
+  // 2. Fallback to global cache if available
+  const codeStr = String(typeCode);
+  if (state.vessel_type_cache && state.vessel_type_cache[codeStr]) {
+    const cached = state.vessel_type_cache[codeStr];
+    return {
+      label: cached.desc_en || cached.desc_fi || 'Other',
+      color: cached.color || '#8899aa',
+      category: cached.category || 'other'
     };
   }
 

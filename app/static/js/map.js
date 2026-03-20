@@ -85,6 +85,14 @@ export function addOrUpdateVessel(v) {
     existing.marker.setIcon(shipIcon(color, heading));
     existing.marker.setOpacity(1);
     
+    // Refresh popup if open
+    if (existing.marker.getPopup() && existing.marker.isPopupOpen()) {
+      updatePopupContent(existing.marker, v);
+    }
+
+    // Sync visibility with current filters
+    updateMarkerVisibility(existing.marker, v);
+
     if (mmsi === state.selectedMmsi) {
       if (state.selectionRing) state.selectionRing.setLatLng([v.lat, v.lon]);
       if (state.historyPolyline) {
@@ -96,25 +104,65 @@ export function addOrUpdateVessel(v) {
       }
     }
   } else {
-    const marker = L.marker([v.lat, v.lon], { icon: shipIcon(color, heading), title: v.name || mmsi }).addTo(map);
+    const marker = L.marker([v.lat, v.lon], { icon: shipIcon(color, heading), title: v.name || mmsi });
     marker.on('click', () => selectVessel(mmsi));
     marker.bindPopup('', { maxWidth: 240, autoPan: false });
     marker.on('popupopen', () => {
       const d = state.vessels[mmsi]?.data;
-      if (!d) return;
-      const ti = vesselTypeInfo(d.type, d.vtype_info);
-      marker.setPopupContent(`
-        <div class="popup-title">${d.name || '(Unknown)'}</div>
-        <div class="popup-row"><span>MMSI</span><span>${d.mmsi}</span></div>
-        <div class="popup-row"><span>Type</span><span>${ti.label}</span></div>
-        <div class="popup-row"><span>SOG</span><span>${d.sog != null ? d.sog.toFixed(1) + ' kn' : '—'}</span></div>
-        <div class="popup-row"><span>COG</span><span>${d.cog != null ? d.cog.toFixed(0) + '°' : '—'}</span></div>
-        <div class="popup-row"><span>Heading</span><span>${d.heading != null ? d.heading.toFixed(0) + '°' : '—'}</span></div>
-        <div class="popup-row"><span>Dest</span><span>${d.destination || '—'}</span></div>
-      `);
+      if (d) updatePopupContent(marker, d);
     });
+    
+    // Sync visibility with current filters before adding to map
+    if (updateMarkerVisibility(marker, v)) {
+      marker.addTo(map);
+    }
+
     state.vessels[mmsi] = { marker, data: v, lastUpdate: Date.now() };
   }
+}
+
+function updateMarkerVisibility(marker, v) {
+  const searchVal = document.getElementById('search')?.value.toLowerCase() || '';
+  const catVal = document.getElementById('type-filter')?.value || 'all';
+  
+  let visible = true;
+  const name = (v.name || '').toLowerCase();
+  const mmsi = v.mmsi;
+
+  if (searchVal && !name.includes(searchVal) && !mmsi.includes(searchVal)) {
+    visible = false;
+  }
+  
+  if (visible && catVal && catVal !== 'all') {
+    const ti = vesselTypeInfo(v.type, v.vtype_info);
+    if (ti.category !== catVal) visible = false;
+  }
+
+  if (visible) {
+    if (!map.hasLayer(marker)) marker.addTo(map);
+  } else {
+    if (map.hasLayer(marker)) map.removeLayer(marker);
+  }
+  return visible;
+}
+
+export function syncMapMarkersVisibility() {
+  for (const v of Object.values(state.vessels)) {
+    updateMarkerVisibility(v.marker, v.data);
+  }
+}
+
+export function updatePopupContent(marker, d) {
+  const ti = vesselTypeInfo(d.type, d.vtype_info);
+  marker.setPopupContent(`
+    <div class="popup-title">${d.name || '(Unknown)'}</div>
+    <div class="popup-row"><span>MMSI</span><span>${d.mmsi}</span></div>
+    <div class="popup-row"><span>Type</span><span>${ti.label}</span></div>
+    <div class="popup-row"><span>SOG</span><span>${d.sog != null ? d.sog.toFixed(1) + ' kn' : '—'}</span></div>
+    <div class="popup-row"><span>COG</span><span>${d.cog != null ? d.cog.toFixed(0) + '°' : '—'}</span></div>
+    <div class="popup-row"><span>Heading</span><span>${d.heading != null ? d.heading.toFixed(0) + '°' : '—'}</span></div>
+    <div class="popup-row"><span>Dest</span><span>${d.destination || '—'}</span></div>
+  `);
 }
 
 export function pruneStaleVessels(staleMinutes) {

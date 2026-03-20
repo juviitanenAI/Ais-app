@@ -1,10 +1,14 @@
 import { API_BASE } from './config.js';
 import { state } from './state.js';
 
-export async function fetchSearchResults(query = '') {
+export async function fetchSearchResults(query = '', category = '') {
   try {
-    const q = query ? `?q=${encodeURIComponent(query)}` : '';
-    const res = await fetch(`${API_BASE}/api/vessels${q}`);
+    const params = new URLSearchParams();
+    if (query) params.append('q', query);
+    if (category) params.append('category', category);
+    
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${API_BASE}/api/vessels${qs}`);
     if (res.ok) {
       state.currentSearchResults = await res.json();
     }

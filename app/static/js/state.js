@@ -8,5 +8,6 @@ export const state = {
   ws: null,
   wsReconnectTimer: null,
   currentSearchResults: [],
-  listUpdateTimer: null
+  listUpdateTimer: null,
+  vessel_type_cache: {}  // code -> { color, desc_fi, desc_en, category }
 };

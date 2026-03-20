@@ -21,6 +21,14 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
     async def lifespan(app: FastAPI):
         # Explicit initialization
         db.init_schema()
+        
+        # Load initial state from DB
+        try:
+            print("[Lifespan] Loading initial vessel state from DB...")
+            db.load_latest_into_state()
+            print(f"[Lifespan] Initial state loaded. state.latest has {len(state.latest)} vessels.")
+        except Exception as e:
+            print(f"[Lifespan] Initial state load failed: {e}")
 
         loop = asyncio.get_running_loop()
 
@@ -83,8 +91,11 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
 
     # --- API: vessel catalog (name/MMSI search) ---
     @app.get("/api/vessels")
-    def api_vessels(q: Optional[str] = Query(default=None, description="Filter by name or MMSI")):
-        rows = db.query_vessels(q=q, limit=2000)
+    def api_vessels(
+        q: Optional[str] = Query(default=None, description="Filter by name or MMSI"),
+        category: Optional[str] = Query(default=None, description="Filter by vessel category")
+    ):
+        rows = db.query_vessels(q=q, category=category, limit=2000)
         return JSONResponse([
             {"mmsi": r[0], "name": r[1], "is_live": bool(r[2]), "latest_ts": r[3]} 
             for r in rows

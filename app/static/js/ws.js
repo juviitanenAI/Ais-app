@@ -18,6 +18,18 @@ export function connectWebSocket() {
   state.ws.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
+      if (msg.type === 'metadata') {
+        const existing = state.vessels[msg.mmsi];
+        if (existing) {
+          existing.data.name = msg.meta?.name || existing.data.name;
+          existing.data.type = msg.meta?.type || existing.data.type;
+          existing.data.destination = msg.meta?.destination || existing.data.destination;
+          existing.data.vtype_info = msg.vtype_info || existing.data.vtype_info;
+          addOrUpdateVessel(existing.data);
+        }
+        return;
+      }
+
       if (msg.type !== 'location') return;
 
       const lat = msg.loc?.lat;
@@ -28,6 +40,7 @@ export function connectWebSocket() {
         mmsi: msg.mmsi,
         name: msg.meta?.name || state.vessels[msg.mmsi]?.data?.name || '',
         type: msg.meta?.type || state.vessels[msg.mmsi]?.data?.type,
+        vtype_info: msg.vtype_info,
         destination: msg.meta?.destination || state.vessels[msg.mmsi]?.data?.destination || '',
         lat, lon,
         sog: msg.loc?.sog,

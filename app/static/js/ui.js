@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { vesselTypeInfo } from './utils.js';
-import { clearHistory, renderHistory, clearSelectionRing, showSelectionRing, map } from './map.js';
+import { clearHistory, renderHistory, clearSelectionRing, showSelectionRing, map, syncMapMarkersVisibility } from './map.js';
 import { fetchHistoryData, fetchSearchResults } from './api.js';
 
 export function scheduleListUpdate() {
@@ -25,7 +25,14 @@ export function updateVesselList(filter = null) {
     combined.set(res.mmsi, { mmsi: res.mmsi, name: res.name, is_live: res.is_live, latest_ts: res.latest_ts });
   }
 
+  const catVal = document.getElementById('type-filter').value;
   for (const [mmsi, v] of Object.entries(state.vessels)) {
+    // Filter live vessels by category if filter is active
+    if (catVal) {
+      const liveCat = v.data.vtype_info?.category?.toLowerCase() || 'other';
+      if (liveCat !== catVal) continue;
+    }
+    
     if (!combined.has(mmsi)) {
       combined.set(mmsi, { mmsi, name: v.data.name, is_live: true, latest_ts: Math.floor(v.lastUpdate / 1000) });
     } else {
@@ -109,6 +116,24 @@ export function renderLegend() {
   html += `<div class="legend-row"><div class="legend-dot" style="background:var(--ship-other)"></div> Other</div>`;
   
   legendEl.innerHTML = html;
+  populateTypeFilter(cats);
+}
+
+export function populateTypeFilter(categories) {
+  const filterEl = document.getElementById('type-filter');
+  if (!filterEl || filterEl.children.length > 1) return; // Already populated (except placeholder)
+
+  for (const cat of categories) {
+    const opt = document.createElement('option');
+    opt.value = cat.label.toLowerCase();
+    opt.textContent = cat.label;
+    filterEl.appendChild(opt);
+  }
+  // Add Other
+  const optOther = document.createElement('option');
+  optOther.value = 'other';
+  optOther.textContent = 'Other';
+  filterEl.appendChild(optOther);
 }
 
 export function selectVessel(mmsi) {
@@ -201,14 +226,25 @@ export function initUIListeners() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
       const query = document.getElementById('search').value.trim();
-      fetchSearchResults(query).then(() => {
+      const category = document.getElementById('type-filter').value;
+      fetchSearchResults(query, category).then(() => {
         updateVesselList();
-        if (query !== '') {
+        syncMapMarkersVisibility();
+        if (query !== '' || category !== '') {
           document.getElementById('app').classList.add('sidebar-visible');
           document.getElementById('sidebar').classList.remove('collapsed');
         }
       });
     }, 250);
+  });
+
+  document.getElementById('type-filter').addEventListener('change', () => {
+    const query = document.getElementById('search').value.trim();
+    const category = document.getElementById('type-filter').value;
+    fetchSearchResults(query, category).then(() => {
+      updateVesselList();
+      syncMapMarkersVisibility();
+    });
   });
 
   document.getElementById('search').addEventListener('focus', () => {
