@@ -1,0 +1,28 @@
+{
+  "name": "ais-app",
+  "version": "1.0.0",
+  "description": "Real-time AIS ship tracking on nautical charts. Receives live vessel positions via MQTT from [Digitraffic Marine](https://www.digitraffic.fi/en/marine-traffic/) and displays them on an interactive OpenSeaMap map.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:js": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juviitanenAI/Ais-app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/juviitanenAI/Ais-app/issues"
+  },
+  "homepage": "https://github.com/juviitanenAI/Ais-app#readme",
+  "devDependencies": {
+    "vitest": "^4.1.0"
+  }
+}

@@ -17,7 +17,7 @@ bump_version:
 	print(f'Bumped version to {v}' if v else 'Version string not found');"
 
 test:
-	@echo "Running tests locally before deploy..."
+	@echo "Running Python backend tests..."
 	@if [ -f venv/bin/pytest ]; then \
 		venv/bin/pytest tests/ ; \
 	elif [ -f .venv/bin/pytest ]; then \
@@ -25,6 +25,8 @@ test:
 	else \
 		python3 -m pytest tests/ ; \
 	fi
+	@echo "Running JavaScript frontend tests..."
+	@npm run test:js
 
 sync:
 	rsync -avz --exclude='.venv' --exclude='__pycache__' --exclude='.git' --exclude='*.sqlite' ./ $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/
