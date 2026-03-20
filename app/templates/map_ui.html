@@ -75,11 +75,10 @@
 
   <div class="map-legend" id="map-legend">
     <div class="legend-title">Vessel Types</div>
-    <div class="legend-row"><div class="legend-dot" style="background:var(--ship-cargo)"></div> Cargo</div>
-    <div class="legend-row"><div class="legend-dot" style="background:var(--ship-tanker)"></div> Tanker</div>
-    <div class="legend-row"><div class="legend-dot" style="background:var(--ship-passenger)"></div> Passenger</div>
-    <div class="legend-row"><div class="legend-dot" style="background:var(--ship-fishing)"></div> Fishing</div>
-    <div class="legend-row"><div class="legend-dot" style="background:var(--ship-other)"></div> Other</div>
+    <div id="map-legend-items">
+      <!-- Populated dynamically by ui.js -->
+      <div class="legend-row"><div class="legend-dot" style="background:var(--ship-other)"></div> Loading types...</div>
+    </div>
   </div>
 
   <!-- Leaflet JS -->

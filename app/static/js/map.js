@@ -55,7 +55,7 @@ export function renderHistory(mmsi, points) {
   if (liveData && liveData.lat != null && liveData.lon != null) {
     coords.push([liveData.lat, liveData.lon]);
   }
-  const { color } = vesselTypeInfo(state.vessels[mmsi]?.data?.type);
+  const { color } = vesselTypeInfo(state.vessels[mmsi]?.data?.type, state.vessels[mmsi]?.data?.vtype_info);
   state.historyPolyline = L.polyline(coords, { color, weight: 3, opacity: 0.7, dashArray: '8, 4', lineJoin: 'round' }).addTo(map);
   points.forEach((p, i) => {
     const opacity = 0.3 + (i / points.length) * 0.7;
@@ -74,7 +74,7 @@ export function renderHistory(mmsi, points) {
 
 export function addOrUpdateVessel(v) {
   const mmsi = v.mmsi;
-  const { color } = vesselTypeInfo(v.type);
+  const { color } = vesselTypeInfo(v.type, v.vtype_info);
   const heading = v.heading ?? v.cog ?? 0;
 
   if (state.vessels[mmsi]) {
@@ -102,7 +102,7 @@ export function addOrUpdateVessel(v) {
     marker.on('popupopen', () => {
       const d = state.vessels[mmsi]?.data;
       if (!d) return;
-      const ti = vesselTypeInfo(d.type);
+      const ti = vesselTypeInfo(d.type, d.vtype_info);
       marker.setPopupContent(`
         <div class="popup-title">${d.name || '(Unknown)'}</div>
         <div class="popup-row"><span>MMSI</span><span>${d.mmsi}</span></div>

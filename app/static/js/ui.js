@@ -51,7 +51,7 @@ export function updateVesselList(filter = null) {
   for (const v of toRender) {
     const liveData = state.vessels[v.mmsi]?.data;
     const type = liveData ? liveData.type : null;
-    const ti = vesselTypeInfo(type);
+    const ti = vesselTypeInfo(type, liveData?.vtype_info);
     const isActive = v.mmsi === state.selectedMmsi;
     
     const speedStr = liveData && liveData.sog != null ? liveData.sog.toFixed(1) + ' kn' : '';
@@ -73,6 +73,42 @@ export function updateVesselList(filter = null) {
   if (sorted.length > 200) html += `<div style="padding:10px 16px; font-size:11px; color:var(--text-muted);">Showing 200 of ${sorted.length} — refine search</div>`;
   if (!html) html = `<div style="padding:20px 16px; text-align:center; color:var(--text-muted); font-size:13px;">No vessels found</div>`;
   listEl.innerHTML = html;
+  
+  // Update legend dynamically if needed
+  renderLegend();
+}
+
+let lastLegendSize = 0;
+export function renderLegend() {
+  const legendEl = document.getElementById('map-legend-items');
+  if (!legendEl) return;
+
+  // Group by category to keep legend lean
+  const categories = {};
+  for (const vtype of Object.values(state.vessel_type_cache)) {
+    if (!vtype.category || vtype.category === 'other') continue;
+    if (!categories[vtype.category]) {
+      categories[vtype.category] = { color: vtype.color, label: vtype.category.charAt(0).toUpperCase() + vtype.category.slice(1) };
+    }
+  }
+  
+  const cats = Object.values(categories);
+  if (cats.length === 0 && lastLegendSize === 0) {
+    legendEl.innerHTML = '<div class="legend-row">No vessel types loaded</div>';
+    return;
+  }
+  if (cats.length === lastLegendSize) return; 
+  lastLegendSize = cats.length;
+
+  let html = '';
+
+  for (const cat of cats) {
+    html += `<div class="legend-row"><div class="legend-dot" style="background:${cat.color}"></div> ${cat.label}</div>`;
+  }
+  // Always add Other
+  html += `<div class="legend-row"><div class="legend-dot" style="background:var(--ship-other)"></div> Other</div>`;
+  
+  legendEl.innerHTML = html;
 }
 
 export function selectVessel(mmsi) {
@@ -130,7 +166,7 @@ export function updateDetailPanel(mmsi) {
   const v = state.vessels[mmsi];
   if (v) {
     const d = v.data;
-    const ti = vesselTypeInfo(d.type);
+    const ti = vesselTypeInfo(d.type, d.vtype_info);
     name = d.name || name;
     typeLab = ti.label; typeCol = ti.color;
     speed = (d.sog != null) ? d.sog.toFixed(1) + ' kn' : speed;

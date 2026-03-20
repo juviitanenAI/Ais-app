@@ -1,5 +1,5 @@
 import { APP_VERSION, STALE_MINUTES } from './config.js';
-import { fetchLiveVesselData, fetchSearchResults } from './api.js';
+import { fetchLiveVesselData, fetchSearchResults, fetchVesselTypes } from './api.js';
 import { connectWebSocket } from './ws.js';
 import { addOrUpdateVessel, pruneStaleVessels } from './map.js';
 import { updateVesselCount, updateVesselList, initUIListeners } from './ui.js';
@@ -12,6 +12,7 @@ initUIListeners();
 
 async function init() {
   try {
+    await fetchVesselTypes();
     const data = await fetchLiveVesselData();
     data.forEach(v => addOrUpdateVessel(v));
     updateVesselCount();

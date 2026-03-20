@@ -1,4 +1,13 @@
-export function vesselTypeInfo(typeCode) {
+export function vesselTypeInfo(typeCode, vtypeInfo = null) {
+  // If we have dynamic info from the API, use it!
+  if (vtypeInfo && vtypeInfo.color) {
+    return { 
+      label: vtypeInfo.label || 'Unknown', 
+      color: vtypeInfo.color, 
+      category: vtypeInfo.category || 'other' 
+    };
+  }
+
   // AIS ship type codes: https://coast.noaa.gov/data/marinecadastre/ais/VesselTypeCodes2018.pdf
   if (!typeCode) return { label: 'Unknown', color: '#8899aa', category: 'other' };
   const t = parseInt(typeCode);

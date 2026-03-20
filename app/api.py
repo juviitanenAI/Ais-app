@@ -12,14 +12,48 @@ from . import db, state
 from .ws_manager import WebSocketManager
 from .mqtt_client import MqttService
 from .snapshot import sampler_task
+from .scripts.update_vessel_types import update_vessel_types
 
 TEMPLATES = Path(__file__).parent / "templates"
 
 def create_app(ws_mgr: WebSocketManager) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Explicit initialization
+        db.init_schema()
+
         loop = asyncio.get_running_loop()
+
+        # Update vessel types from Digitraffic (run in background)
+        def update_and_cache():
+            import time
+            start_time = time.time()
+            try:
+                print("[Lifespan] Starting background vessel type update...")
+                update_vessel_types()
+                new_types = db.query_vessel_types()
+                state.vessel_type_cache.update(new_types)
+                print(f"[Lifespan] Vessel types updated successfully. Cache now has {len(state.vessel_type_cache)} entries. Took {time.time() - start_time:.2f}s")
+            except Exception as e:
+                print(f"[Lifespan] Vessel type update failed after {time.time() - start_time:.2f}s: {e}")
+
+        # 1. Update once on startup
+        loop.run_in_executor(None, update_and_cache)
         
+        # 2. Schedule weekly
+        async def weekly_updater():
+            while True:
+                await asyncio.sleep(7 * 24 * 3600)  # Wait 1 week
+                loop.run_in_executor(None, update_and_cache)
+        
+        up_task = asyncio.create_task(weekly_updater())
+
+        # Initial cache load
+        try:
+            state.vessel_type_cache.update(db.query_vessel_types())
+        except Exception as e:
+            print(f"[Lifespan] Initial cache load failed: {e}")
+
         # Start MQTT client
         mqtt = MqttService(ws_mgr, loop)
         mqtt.start()
@@ -30,6 +64,7 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         yield
         
         s_task.cancel()
+        up_task.cancel()
 
     app = FastAPI(lifespan=lifespan)
 
@@ -55,6 +90,11 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
             for r in rows
         ])
 
+    # --- API: vessel types (for legend and styling) ---
+    @app.get("/api/vessel-types")
+    def api_vessel_types():
+        return JSONResponse(state.vessel_type_cache)
+
     # --- API: all vessels with current position (for initial map load) ---
     @app.get("/api/vessels/live")
     def api_vessels_live():
@@ -67,10 +107,18 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
             if not loc or loc.get("lat") is None or loc.get("lon") is None:
                 continue
             meta = v.get("meta", {})
+            vtype_code = str(meta.get("type", ""))
+            style = state.vessel_type_cache.get(vtype_code, {})
+
             result.append({
                 "mmsi": mmsi,
                 "name": meta.get("name", ""),
                 "type": meta.get("type"),
+                "vtype_info": {
+                    "color": style.get("color", "#8899aa"),
+                    "label": style.get("desc_en") or style.get("desc_fi") or "Other",
+                    "category": style.get("category", "other")
+                },
                 "destination": meta.get("destination", ""),
                 "lat": loc["lat"],
                 "lon": loc["lon"],

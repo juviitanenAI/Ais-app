@@ -56,6 +56,17 @@ def init_schema() -> None:
         db.execute("CREATE INDEX IF NOT EXISTS idx_samples_mmsi_ts ON vessel_samples(mmsi, ts);")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_samples_mmsi_ts ON vessel_samples(mmsi, ts);")
 
+        # Alusten tyyppien kuvaukset ja värit
+        db.execute("""
+        CREATE TABLE IF NOT EXISTS vessel_types (
+            code TEXT PRIMARY KEY,
+            desc_fi TEXT,
+            desc_en TEXT,
+            color TEXT,
+            category TEXT
+        );
+        """)
+
 def upsert_latest(mmsi: str, loc: Optional[dict] = None, meta: Optional[dict] = None) -> None:
     """Päivitä viimeisin rivi yhdellä UPSERTillä."""
     name = meta.get("name") if meta else None
@@ -93,6 +104,24 @@ def upsert_latest(mmsi: str, loc: Optional[dict] = None, meta: Optional[dict] = 
             meta_ts_ms = COALESCE(excluded.meta_ts_ms, vessel_latest.meta_ts_ms),
             updated_ms = excluded.updated_ms
         """, (mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms))
+
+def upsert_vessel_type(code: str, desc_fi: str, desc_en: str, color: str, category: str) -> None:
+    db = get_db()
+    with _db_lock, db:
+        db.execute("""
+        INSERT INTO vessel_types (code, desc_fi, desc_en, color, category)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(code) DO UPDATE SET
+            desc_fi = excluded.desc_fi,
+            desc_en = excluded.desc_en,
+            color = excluded.color,
+            category = excluded.category
+        """, (code, desc_fi, desc_en, color, category))
+
+def query_vessel_types() -> Dict[str, dict]:
+    db = get_db()
+    rows = db.execute("SELECT code, desc_fi, desc_en, color, category FROM vessel_types").fetchall()
+    return {r[0]: {"desc_fi": r[1], "desc_en": r[2], "color": r[3], "category": r[4]} for r in rows}
 
 def insert_snapshot_rows(rows: List[Tuple[str, int, float, float, Optional[float], Optional[float], Optional[float]]]) -> None:
     if not rows:
@@ -226,4 +255,5 @@ def query_history(mmsis: List[str], since_sec: int) -> Dict[str, List[dict]]:
     return out
 
 # Alusta skeema moduulin latauksen yhteydessä
-init_schema()
+# init_schema() - Removed top-level call to prevent startup crashes if DB is locked.
+# It is now called explicitly in the FastAPI lifespan.

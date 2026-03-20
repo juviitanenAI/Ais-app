@@ -65,7 +65,20 @@ class MqttService:
                     db.upsert_latest(mmsi, loc=payload, meta=None)
 
                     # Lähetä WS:lle vain kiinnostuneille
-                    message = {"type": "location", "mmsi": mmsi, "loc": payload, "meta": v.get("meta", {})}
+                    vtype_code = str(v["meta"].get("type", ""))
+                    style = state.vessel_type_cache.get(vtype_code, {})
+                    vtype_info = {
+                        "color": style.get("color", "#8899aa"),
+                        "label": style.get("desc_en") or style.get("desc_fi") or "Other",
+                        "category": style.get("category", "other")
+                    }
+                    message = {
+                        "type": "location", 
+                        "mmsi": mmsi, 
+                        "loc": payload, 
+                        "meta": v.get("meta", {}),
+                        "vtype_info": vtype_info
+                    }
                     asyncio.run_coroutine_threadsafe(self.ws_mgr.broadcast_location(mmsi, message), self.loop)
 
         except Exception as e:

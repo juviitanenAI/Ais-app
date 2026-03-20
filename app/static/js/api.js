@@ -24,3 +24,9 @@ export async function fetchHistoryData(mmsi, minutes) {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return await res.json();
 }
+
+export async function fetchVesselTypes() {
+  const res = await fetch(`${API_BASE}/api/vessel-types`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  state.vessel_type_cache = await res.json();
+}
