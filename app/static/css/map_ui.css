@@ -412,6 +412,7 @@
     .history-controls {
       display: flex;
       gap: 4px;
+      margin-top: 8px;
     }
 
     .history-btn {
