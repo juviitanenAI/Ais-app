@@ -1183,7 +1183,7 @@
     // Load history
     loadHistory(mmsi);
 
-    // Start polling history every 15s to simulate live line drawing
+    // Start polling history every 30s to simulate live line drawing
     if (historyPollTimer) clearInterval(historyPollTimer);
     historyPollTimer = setInterval(() => {
       if (selectedMmsi) loadHistory(selectedMmsi);
