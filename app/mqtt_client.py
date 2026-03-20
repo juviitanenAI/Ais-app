@@ -18,7 +18,12 @@ def in_bbox(lat: float, lon: float) -> bool:
     return (min_lat <= lat <= max_lat) and (min_lon <= lon <= max_lon)
 
 class MqttService:
-    """Ylläpitää yhteyttä Digitraffic Marine MQTT/WebSocket ‑päätteeseen."""
+    """
+    Ylläpitää yhteyttä Digitraffic Marine MQTT/WebSocket ‑päätteeseen.
+    Note: We use a single shared background connection to ingest data into our local DB/state.
+    This architecture adheres to Digitrafic's 5 requests per minute limit by shielding
+    the source from direct user-driven requests.
+    """
     def __init__(self, ws_mgr: WebSocketManager, loop: asyncio.AbstractEventLoop):
         self.ws_mgr = ws_mgr
         self.loop = loop
@@ -71,7 +76,10 @@ class MqttService:
             client = mqtt.Client(transport="websockets")
             if settings.USE_SSL:
                 client.tls_set()
-            client.ws_set_options(path=settings.BROKER_PATH)
+            client.ws_set_options(
+                path=settings.BROKER_PATH,
+                headers={"Digitraffic-User": settings.DIGITRAFFIC_USER}
+            )
             client.on_connect = self._on_connect
             client.on_message = self._on_message
             client.connect(settings.BROKER_HOST, settings.BROKER_PORT, keepalive=60)

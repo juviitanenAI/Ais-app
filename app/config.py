@@ -32,4 +32,8 @@ class Settings:
     # SQLite
     DB_PATH: str = os.getenv("DB_PATH", "vessels.sqlite")
 
+    # Rate limiting compliance
+    # Use this header to identify the application as per Digitrafic's recommendations
+    DIGITRAFFIC_USER: str = os.getenv("DIGITRAFFIC_USER", "Ais-app-research-project")
+
 settings = Settings()
