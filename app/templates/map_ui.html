@@ -692,7 +692,7 @@
   // =============================================================================
   // CONFIG
   // =============================================================================
-  const APP_VERSION = '0.6';
+  const APP_VERSION = '0.8';
   const API_BASE = location.origin;
   const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
   const STALE_MINUTES = 30;
@@ -790,6 +790,7 @@
   let selectionRing = null;   // Leaflet marker for the pulsing ring
   let historyPolyline = null;
   let historyMinutes = 180;
+  let historyPollTimer = null;
   let ws = null;
   let wsReconnectTimer = null;
 
@@ -810,8 +811,18 @@
       existing.marker.setIcon(shipIcon(color, heading));
       existing.marker.setOpacity(1);
       // Keep selection ring following the selected vessel
-      if (mmsi === selectedMmsi && selectionRing) {
-        selectionRing.setLatLng([v.lat, v.lon]);
+      if (mmsi === selectedMmsi) {
+        if (selectionRing) {
+          selectionRing.setLatLng([v.lat, v.lon]);
+        }
+        // Update history polyline's final point to track the live vessel
+        if (historyPolyline) {
+          const latlngs = historyPolyline.getLatLngs();
+          if (latlngs && latlngs.length > 0) {
+            latlngs[latlngs.length - 1] = new L.LatLng(v.lat, v.lon);
+            historyPolyline.setLatLngs(latlngs);
+          }
+        }
       }
     } else {
       // Create new
@@ -1125,12 +1136,16 @@
   }
 
   function selectVessel(mmsi) {
+    if (selectedMmsi !== mmsi) {
+      clearHistory();
+    }
     selectedMmsi = mmsi;
 
     // Highlight in list
     document.querySelectorAll('.vessel-item').forEach(el => {
       el.classList.toggle('active', el.dataset.mmsi === mmsi);
     });
+
 
     // Pan map & show selection ring
     const v = vessels[mmsi];
@@ -1167,6 +1182,12 @@
 
     // Load history
     loadHistory(mmsi);
+
+    // Start polling history every 15s to simulate live line drawing
+    if (historyPollTimer) clearInterval(historyPollTimer);
+    historyPollTimer = setInterval(() => {
+      if (selectedMmsi) loadHistory(selectedMmsi);
+    }, 30000);
   }
 
   function updateDetailPanel(mmsi) {
@@ -1223,6 +1244,10 @@
   // ---- Close detail ----
   document.getElementById('detail-close').addEventListener('click', () => {
     selectedMmsi = null;
+    if (historyPollTimer) {
+      clearInterval(historyPollTimer);
+      historyPollTimer = null;
+    }
     document.getElementById('detail-panel').classList.remove('visible');
     document.getElementById('sidebar').classList.remove('detail-view');
     clearHistory();
@@ -1241,20 +1266,37 @@
   }
 
   async function loadHistory(mmsi) {
-    clearHistory();
     if (!mmsi) return;
 
     try {
       const res = await fetch(`${API_BASE}/api/history?mmsi=${encodeURIComponent(mmsi)}&minutes=${historyMinutes}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      
+      // If the user selected a different vessel while we were fetching, ignore this result
+      if (mmsi !== selectedMmsi) return;
+
       const points = (data[mmsi] || []);
 
-      if (points.length < 2) return;
+      if (points.length < 2) {
+        clearHistory();
+        return;
+      }
 
       // Create gradient-like polyline (multiple segments with fading opacity)
       const coords = points.map(p => [p.lat, p.lon]);
+      
+      // Always append the dynamic live vessel position at the end 
+      // so the line connects the last snapshot directly to the ship.
+      const liveData = vessels[mmsi]?.data;
+      if (liveData && liveData.lat != null && liveData.lon != null) {
+        coords.push([liveData.lat, liveData.lon]);
+      }
+
       const { color } = vesselTypeInfo(vessels[mmsi]?.data?.type);
+
+      // Clear the old history only now that we have the new data ready to draw
+      clearHistory();
 
       historyPolyline = L.polyline(coords, {
         color: color,
