@@ -278,7 +278,7 @@ export function zoomToFitSelection() {
     const paddingOptions = isMobile 
       ? { 
           paddingTopLeft: [70, 160],     // Left: toggle, Top: legend/controls
-          paddingBottomRight: [140, Math.floor(window.innerHeight * 0.4)] // Right: legend width, Bottom: shelf
+          paddingBottomRight: [140, (document.getElementById('sidebar')?.offsetHeight || 0) + 20] // Right: legend width, Bottom: sidebar height + buffer
         }
       : { 
           paddingTopLeft: [360, 40],     // Left: sidebar, Top: buffer

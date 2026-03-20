@@ -216,7 +216,7 @@ export function selectVessel(mmsi, pin = true) {
     if (v) {
       const targetZoom = Math.max(map.getZoom(), 10);
       const targetPoint = map.project([v.data.lat, v.data.lon], targetZoom);
-      if (window.innerWidth <= 768) targetPoint.y += 150;
+      if (window.innerWidth <= 768) targetPoint.y += 240;
       else targetPoint.y -= 120;
       const adjustedCenter = map.unproject(targetPoint, targetZoom);
       map.flyTo(adjustedCenter, targetZoom, { animate: true, duration: 0.8 });
@@ -278,6 +278,20 @@ export function updateDetailPanel(mmsi) {
     <div class="detail-field"><div class="detail-label">Course</div><div class="detail-value">${cog}</div></div>
     <div class="detail-field"><div class="detail-label">Destination</div><div class="detail-value">${dest}</div></div>
   `;
+
+  // Render history buttons in detail panel for mobile
+  const historyControls = document.getElementById('detail-history-controls');
+  if (historyControls) {
+    const minutes = [60, 180, 720, 1440];
+    const labels = ['1h', '3h', '12h', '24h'];
+    let html = '<div class="history-controls">';
+    minutes.forEach((m, i) => {
+      const active = (state.historyMinutes === m) ? ' active' : '';
+      html += `<button class="history-btn${active}" data-minutes="${m}">${labels[i]}</button>`;
+    });
+    html += '</div>';
+    historyControls.innerHTML = html;
+  }
 }
 
 export function initUIListeners() {
@@ -382,21 +396,25 @@ export function initUIListeners() {
     // We only hide the panel, but keep the ship active/selected in the list.
   });
 
-  document.querySelectorAll('.history-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      document.querySelectorAll('.history-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      state.historyMinutes = parseInt(btn.dataset.minutes);
-      
-      const promises = [];
-      if (state.activeMmsi) promises.push(loadAndRenderHistory(state.activeMmsi));
-      state.selectedMmsis.forEach(m => {
-        if (m !== state.activeMmsi) promises.push(loadAndRenderHistory(m));
-      });
-      
-      await Promise.all(promises);
-      zoomToFitSelection();
+  // Event delegation for history buttons (handles both sidebar and detail panel)
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.history-btn');
+    if (!btn) return;
+
+    document.querySelectorAll('.history-btn').forEach(b => b.classList.remove('active'));
+    // Highlight all buttons with the same value (both in sidebar and detail card if both visible)
+    document.querySelectorAll(`.history-btn[data-minutes="${btn.dataset.minutes}"]`).forEach(b => b.classList.add('active'));
+    
+    state.historyMinutes = parseInt(btn.dataset.minutes);
+    
+    const promises = [];
+    if (state.activeMmsi) promises.push(loadAndRenderHistory(state.activeMmsi));
+    state.selectedMmsis.forEach(m => {
+      if (m !== state.activeMmsi) promises.push(loadAndRenderHistory(m));
     });
+    
+    await Promise.all(promises);
+    zoomToFitSelection();
   });
 
   document.getElementById('sidebar-toggle').addEventListener('click', () => {
