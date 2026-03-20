@@ -402,4 +402,12 @@ export function initUIListeners() {
     document.getElementById('app').classList.remove('sidebar-visible');
     setTimeout(() => map.invalidateSize(), 350);
   });
+
+  const legend = document.getElementById('map-legend');
+  const legendToggle = document.getElementById('legend-toggle');
+  if (legend && legendToggle) {
+    legendToggle.addEventListener('click', () => {
+      legend.classList.toggle('collapsed');
+    });
+  }
 }

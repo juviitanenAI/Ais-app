@@ -9,9 +9,9 @@ const osmBase = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 const darkBase = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, attribution: '&copy; <a href="https://carto.com">CARTO</a>' });
 const seaMap = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; <a href="https://openseamap.org">OpenSeaMap</a>', opacity: 0.8 });
 
-darkBase.addTo(map);
+osmBase.addTo(map);
 seaMap.addTo(map);
-L.control.layers({ 'Dark': darkBase, 'Light': osmBase }, { 'Nautical (OpenSeaMap)': seaMap }, { position: 'topright' }).addTo(map);
+L.control.layers({ 'Light': osmBase, 'Dark': darkBase }, { 'Nautical (OpenSeaMap)': seaMap }, { position: 'topright' }).addTo(map);
 
 map.on('click', () => {
   if (window.innerWidth <= 768 && document.getElementById('app').classList.contains('sidebar-visible')) {
@@ -252,9 +252,17 @@ export function zoomToFitSelection() {
   } else {
     const bounds = L.latLngBounds(coords);
     const isMobile = window.innerWidth <= 768;
+    
+    // Correct Leaflet fitBounds padding: paddingTopLeft [left, top], paddingBottomRight [right, bottom]
     const paddingOptions = isMobile 
-      ? { padding: [10, 10], paddingBottomRight: [0, Math.floor(window.innerHeight * 0.4)] } // Mobile shelf ~35vh
-      : { padding: [10, 10], paddingLeft: 350 };           // Desktop sidebar 340px
+      ? { 
+          paddingTopLeft: [70, 160],     // Left: toggle, Top: legend/controls
+          paddingBottomRight: [140, Math.floor(window.innerHeight * 0.4)] // Right: legend width, Bottom: shelf
+        }
+      : { 
+          paddingTopLeft: [360, 40],     // Left: sidebar, Top: buffer
+          paddingBottomRight: [160, 200] // Right & Bottom: legend area
+        };
     
     map.fitBounds(bounds, { ...paddingOptions, maxZoom: 15, animate: true, duration: 0.8 });
   }

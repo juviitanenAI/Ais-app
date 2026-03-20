@@ -471,18 +471,59 @@
       backdrop-filter: blur(10px);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 12px 16px;
+      padding: 0;
       z-index: 999;
       font-size: 11px;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      width: 140px;
+    }
+    
+    .map-legend.collapsed {
+      width: 110px;
     }
 
     .legend-title {
       font-weight: 600;
-      margin-bottom: 6px;
+      padding: 10px 12px;
       color: var(--text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.5px;
       font-size: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.2s;
+    }
+    
+    .legend-title:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+    
+    .legend-title .toggle-icon {
+      transition: transform 0.3s;
+      font-size: 12px;
+      opacity: 0.6;
+    }
+
+    .map-legend.collapsed .toggle-icon {
+      transform: rotate(-90deg);
+    }
+
+    #map-legend-items {
+      padding: 0 12px 10px;
+      transition: opacity 0.2s, max-height 0.3s;
+      max-height: 400px;
+      overflow: hidden;
+    }
+
+    .map-legend.collapsed #map-legend-items {
+      opacity: 0;
+      max-height: 0;
+      padding-bottom: 0;
     }
 
     .legend-row {
