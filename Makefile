@@ -6,11 +6,11 @@ REMOTE_USER ?= dummy
 REMOTE_HOST ?= dummy
 REMOTE_DIR ?= /home/$(REMOTE_USER)/publicwsgi/ais-app
 
-deploy: test bump_version sync install service
+deploy: test bump_version sync install
 	@echo "Deployment to $(REMOTE_HOST) complete!"
 
 bump_version:
-	@python3 -c "import re; fp='app/templates/map_ui.html'; c=open(fp).read(); m=re.search(r\"const APP_VERSION = '(\d+)\.(\d+)';\", c); \
+	@python3 -c "import re; fp='app/static/js/config.js'; c=open(fp).read(); m=re.search(r\"const APP_VERSION = '(\d+)\.(\d+)';\", c); \
 	ma, mi = (int(m.group(1)), int(m.group(2))) if m else (0,0); \
 	v=f'{ma + (mi >= 9)}.{ (mi + 1) % 10 }' if m else None; \
 	open(fp, 'w').write(re.sub(r\"const APP_VERSION = '(\d+)\.(\d+)';\", f\"const APP_VERSION = '{v}';\", c)) if v else None; \
