@@ -7,13 +7,13 @@ export function scheduleListUpdate() {
   if (state.listUpdateTimer) return;
   state.listUpdateTimer = setTimeout(() => {
     state.listUpdateTimer = null;
-    updateVesselCount();
     updateVesselList();
   }, 2000);
 }
 
-export function updateVesselCount() {
-  document.getElementById('vessel-count').textContent = Object.keys(state.vessels).length;
+export function updateVesselCount(count) {
+  const el = document.getElementById('vessel-count');
+  if (el) el.textContent = count;
 }
 
 export function updateVesselList(filter = null) {
@@ -52,6 +52,8 @@ export function updateVesselList(filter = null) {
       const nb = b.name || 'zzz';
       return na.localeCompare(nb);
     });
+
+  updateVesselCount(sorted.length);
 
   const toRender = sorted.slice(0, 200);
   let html = '';
