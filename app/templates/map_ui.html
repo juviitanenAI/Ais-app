@@ -32,14 +32,6 @@
           <span class="icon">⚓</span> AIS Tracker
           <span class="version">Version <span class="app-version">0.2</span></span>
         </div>
-        <div class="search-box">
-          <input type="text" id="search" placeholder="Search vessel name or MMSI…" autocomplete="off"/>
-        </div>
-        <div class="filter-box">
-          <select id="type-filter">
-            <option value="">All Vessel Types</option>
-          </select>
-        </div>
       </div>
 
       <div class="stats-bar">
@@ -56,6 +48,17 @@
         </div>
       </div>
 
+      <div class="search-filter-area">
+        <div class="search-box">
+          <input type="text" id="search" placeholder="Search vessel name or MMSI…" autocomplete="off"/>
+        </div>
+        <div class="filter-box">
+          <select id="type-filter">
+            <option value="">All Vessel Types</option>
+          </select>
+        </div>
+      </div>
+
       <div class="vessel-list-header">
         <div class="header-left">
           <label class="toggle-container">
@@ -64,7 +67,9 @@
           </label>
           <span class="hide-others-text">Hide others</span>
         </div>
-        <button id="deselect-all" class="deselect-all-btn" title="Clear all pins and selection">Clear selection</button>
+        <div class="header-actions">
+          <button id="deselect-all" class="deselect-all-btn" title="Clear all pins and selection">Clear selection</button>
+        </div>
       </div>
 
       <div class="vessel-list" id="vessel-list"></div>

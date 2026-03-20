@@ -1,12 +1,7 @@
 import { state } from './state.js';
 import { vesselTypeInfo, shipIcon } from './utils.js';
 import { selectVessel } from './ui.js';
-
-export const map = L.map('map', {
-  zoomControl: false,
-  attributionControl: true,
-  preferCanvas: true, // Use Canvas renderer for better performance with many points
-}).setView([60.5, 22.0], 7);
+import { map } from './map_instance.js';
 
 L.control.zoom({ position: 'topright' }).addTo(map);
 
@@ -229,5 +224,38 @@ export function pruneStaleVessels(staleMinutes) {
     if (v.lastUpdate < cutoff) {
       v.marker.setOpacity(0.3);
     }
+  }
+}
+export function zoomToFitSelection() {
+  const coords = [];
+  
+  // Add active vessel
+  if (state.activeMmsi && state.vessels[state.activeMmsi]) {
+    const v = state.vessels[state.activeMmsi].data;
+    if (v.lat != null && v.lon != null) coords.push([v.lat, v.lon]);
+  }
+  
+  // Add selected vessels
+  state.selectedMmsis.forEach(mmsi => {
+    if (mmsi !== state.activeMmsi && state.vessels[mmsi]) {
+      const v = state.vessels[mmsi].data;
+      if (v.lat != null && v.lon != null) coords.push([v.lat, v.lon]);
+    }
+  });
+
+  if (coords.length === 0) return;
+
+  if (coords.length === 1) {
+    const targetZoom = Math.max(map.getZoom(), 12);
+    // Standard centering logic for single ship (already exists in selectVessel but good here too)
+    map.flyTo(coords[0], targetZoom, { animate: true, duration: 0.8 });
+  } else {
+    const bounds = L.latLngBounds(coords);
+    const isMobile = window.innerWidth <= 768;
+    const paddingOptions = isMobile 
+      ? { padding: [10, 10], paddingBottomRight: [0, Math.floor(window.innerHeight * 0.4)] } // Mobile shelf ~35vh
+      : { padding: [10, 10], paddingLeft: 350 };           // Desktop sidebar 340px
+    
+    map.fitBounds(bounds, { ...paddingOptions, maxZoom: 15, animate: true, duration: 0.8 });
   }
 }

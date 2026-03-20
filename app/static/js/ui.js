@@ -1,6 +1,7 @@
 import { state } from './state.js';
-import { vesselTypeInfo } from './utils.js';
-import { clearHistory, renderHistory, clearSelectionRing, showSelectionRing, map, syncMapMarkersVisibility, updateVesselMarkerStyle } from './map.js';
+import { vesselTypeInfo, compareVessels, filterVessels } from './utils.js';
+import { clearHistory, renderHistory, clearSelectionRing, showSelectionRing, syncMapMarkersVisibility, updateVesselMarkerStyle, zoomToFitSelection } from './map.js';
+import { map } from './map_instance.js';
 import { fetchHistoryData, fetchSearchResults } from './api.js';
 
 export function scheduleListUpdate() {
@@ -18,7 +19,6 @@ export function updateVesselCount(count) {
 
 export function updateVesselList(filter = null) {
   const listEl = document.getElementById('vessel-list');
-  const searchVal = filter ?? document.getElementById('search').value.toLowerCase();
 
   const combined = new Map();
   for (const res of state.currentSearchResults) {
@@ -42,22 +42,9 @@ export function updateVesselList(filter = null) {
     }
   }
 
-  const sorted = Array.from(combined.values())
-    .filter(v => {
-      if (!searchVal) return true;
-      return (v.name || '').toLowerCase().includes(searchVal) || v.mmsi.includes(searchVal);
-    })
-    .sort((a, b) => {
-      const isASelected = state.selectedMmsis.has(a.mmsi) || a.mmsi === state.activeMmsi;
-      const isBSelected = state.selectedMmsis.has(b.mmsi) || b.mmsi === state.activeMmsi;
-      
-      if (isASelected && !isBSelected) return -1;
-      if (!isASelected && isBSelected) return 1;
-      
-      const na = a.name || 'zzz';
-      const nb = b.name || 'zzz';
-      return na.localeCompare(nb);
-    });
+  const searchVal = document.getElementById('search')?.value.trim();
+  const sorted = filterVessels(Array.from(combined.values()), searchVal)
+    .sort((a, b) => compareVessels(a, b, state.selectedMmsis, state.activeMmsi));
 
   updateVesselCount(sorted.length);
 
@@ -190,19 +177,6 @@ export function selectVessel(mmsi, pin = true) {
     if (cb && el.dataset.mmsi === mmsi && pin) cb.checked = true;
   });
 
-  const v = state.vessels[mmsi];
-  if (v) {
-    const targetZoom = Math.max(map.getZoom(), 10);
-    const targetPoint = map.project([v.data.lat, v.data.lon], targetZoom);
-    if (window.innerWidth <= 768) targetPoint.y += 150;
-    else targetPoint.y -= 120;
-    
-    const adjustedCenter = map.unproject(targetPoint, targetZoom);
-    map.flyTo(adjustedCenter, targetZoom, { animate: true, duration: 0.8 });
-    if (window.innerWidth > 768) v.marker.openPopup();
-    showSelectionRing([v.data.lat, v.data.lon]);
-  }
-
   updateDetailPanel(mmsi);
   document.getElementById('detail-panel').classList.add('visible');
   document.getElementById('sidebar').classList.add('detail-view');
@@ -213,6 +187,24 @@ export function selectVessel(mmsi, pin = true) {
   loadAndRenderHistory(mmsi);
   startHistoryPolling();
   updateResultsHeaderVisibility();
+  
+  // Automate zoom-to-fit or centering
+  if (state.selectedMmsis.size > 0) {
+    zoomToFitSelection();
+  } else {
+    // Single vessel centering logic (existing)
+    const v = state.vessels[mmsi];
+    if (v) {
+      const targetZoom = Math.max(map.getZoom(), 10);
+      const targetPoint = map.project([v.data.lat, v.data.lon], targetZoom);
+      if (window.innerWidth <= 768) targetPoint.y += 150;
+      else targetPoint.y -= 120;
+      const adjustedCenter = map.unproject(targetPoint, targetZoom);
+      map.flyTo(adjustedCenter, targetZoom, { animate: true, duration: 0.8 });
+      if (window.innerWidth > 768) v.marker.openPopup();
+      showSelectionRing([v.data.lat, v.data.lon]);
+    }
+  }
 }
 
 export function startHistoryPolling() {
@@ -290,6 +282,7 @@ export function initUIListeners() {
       updateVesselList();
       syncMapMarkersVisibility();
       updateResultsHeaderVisibility();
+      zoomToFitSelection();
       return;
     }
 

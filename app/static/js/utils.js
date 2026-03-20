@@ -57,3 +57,29 @@ export function shipIcon(color, heading, isPinned = false, isActive = false) {
     iconAnchor: [12, 12],
   });
 }
+
+/**
+ * Sorts vessels: Pinned/Active first, then alphabetical by name.
+ */
+export function compareVessels(a, b, selectedMmsis, activeMmsi) {
+  const isASelected = selectedMmsis.has(a.mmsi) || a.mmsi === activeMmsi;
+  const isBSelected = selectedMmsis.has(b.mmsi) || b.mmsi === activeMmsi;
+  
+  if (isASelected && !isBSelected) return -1;
+  if (!isASelected && isBSelected) return 1;
+  
+  const na = (a.name || 'zzz').toLowerCase();
+  const nb = (b.name || 'zzz').toLowerCase();
+  return na.localeCompare(nb);
+}
+
+/**
+ * Filters vessels by name or MMSI.
+ */
+export function filterVessels(vessels, searchVal) {
+  if (!searchVal) return vessels;
+  const search = searchVal.toLowerCase();
+  return vessels.filter(v => 
+    (v.name || '').toLowerCase().includes(search) || v.mmsi.includes(search)
+  );
+}
