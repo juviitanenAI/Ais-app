@@ -5,6 +5,7 @@ import { selectVessel } from './ui.js';
 export const map = L.map('map', {
   zoomControl: false,
   attributionControl: true,
+  preferCanvas: true, // Use Canvas renderer for better performance with many points
 }).setView([60.5, 22.0], 7);
 
 L.control.zoom({ position: 'topright' }).addTo(map);
@@ -40,49 +41,79 @@ export function showSelectionRing(latlng) {
   }).addTo(map);
 }
 
-export function clearHistory() {
-  if (state.historyPolyline) {
-    map.removeLayer(state.historyPolyline);
-    state.historyPolyline = null;
+export function clearHistory(mmsi = null) {
+  if (mmsi) {
+    const layer = state.historyLayers.get(mmsi);
+    if (layer) {
+      map.removeLayer(layer.polyline);
+      (layer.circles || []).forEach(c => map.removeLayer(c));
+      state.historyLayers.delete(mmsi);
+    }
+  } else {
+    state.historyLayers.forEach((layer) => {
+      map.removeLayer(layer.polyline);
+      (layer.circles || []).forEach(c => map.removeLayer(c));
+    });
+    state.historyLayers.clear();
   }
 }
 
 export function renderHistory(mmsi, points) {
-  clearHistory();
+  clearHistory(mmsi);
   if (points.length < 2) return;
+
   const coords = points.map(p => [p.lat, p.lon]);
   const liveData = state.vessels[mmsi]?.data;
   if (liveData && liveData.lat != null && liveData.lon != null) {
     coords.push([liveData.lat, liveData.lon]);
   }
+
   const { color } = vesselTypeInfo(state.vessels[mmsi]?.data?.type, state.vessels[mmsi]?.data?.vtype_info);
-  state.historyPolyline = L.polyline(coords, { color, weight: 3, opacity: 0.7, dashArray: '8, 4', lineJoin: 'round' }).addTo(map);
-  points.forEach((p, i) => {
-    const opacity = 0.3 + (i / points.length) * 0.7;
-    const circle = L.circleMarker([p.lat, p.lon], { radius: 3, fillColor: color, fillOpacity: opacity, stroke: false }).addTo(map);
-    const time = new Date(p.ts * 1000).toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' });
-    circle.bindTooltip(`${time} — ${p.sog != null ? p.sog.toFixed(1) + ' kn' : ''}`, { className: '', direction: 'top' });
-    if (!state.historyPolyline._circles) state.historyPolyline._circles = [];
-    state.historyPolyline._circles.push(circle);
-  });
-  const origRemove = state.historyPolyline.onRemove.bind(state.historyPolyline);
-  state.historyPolyline.onRemove = function(mapObj) {
-    (this._circles || []).forEach(c => mapObj.removeLayer(c));
-    origRemove(mapObj);
-  };
+  const isActive = (mmsi === state.activeMmsi);
+  
+  const polyline = L.polyline(coords, {
+    color,
+    weight: isActive ? 3 : 2,
+    opacity: isActive ? 0.7 : 0.4,
+    dashArray: isActive ? '8, 4' : '4, 4',
+    lineJoin: 'round',
+    smoothFactor: 1.5 // Performance optimization
+  }).addTo(map);
+
+  const circles = [];
+  // Only render point circles for the active vessel to save performance
+  if (isActive) {
+    points.forEach((p, i) => {
+      const opacity = 0.3 + (i / points.length) * 0.7;
+      const circle = L.circleMarker([p.lat, p.lon], {
+        radius: 3,
+        fillColor: color,
+        fillOpacity: opacity,
+        stroke: false
+      }).addTo(map);
+      
+      const time = new Date(p.ts * 1000).toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' });
+      circle.bindTooltip(`${time} — ${p.sog != null ? p.sog.toFixed(1) + ' kn' : ''}`, { direction: 'top' });
+      circles.push(circle);
+    });
+  }
+
+  state.historyLayers.set(mmsi, { polyline, circles });
 }
 
 export function addOrUpdateVessel(v) {
   const mmsi = v.mmsi;
   const { color } = vesselTypeInfo(v.type, v.vtype_info);
   const heading = v.heading ?? v.cog ?? 0;
+  const isPinned = state.selectedMmsis.has(mmsi);
+  const isActive = (mmsi === state.activeMmsi);
 
   if (state.vessels[mmsi]) {
     const existing = state.vessels[mmsi];
     existing.data = v;
     existing.lastUpdate = Date.now();
     existing.marker.setLatLng([v.lat, v.lon]);
-    existing.marker.setIcon(shipIcon(color, heading));
+    existing.marker.setIcon(shipIcon(color, heading, isPinned, isActive));
     existing.marker.setOpacity(1);
     
     // Refresh popup if open
@@ -93,18 +124,21 @@ export function addOrUpdateVessel(v) {
     // Sync visibility with current filters
     updateMarkerVisibility(existing.marker, v);
 
-    if (mmsi === state.selectedMmsi) {
-      if (state.selectionRing) state.selectionRing.setLatLng([v.lat, v.lon]);
-      if (state.historyPolyline) {
-        const latlngs = state.historyPolyline.getLatLngs();
+    if (mmsi === state.activeMmsi || state.selectedMmsis.has(mmsi)) {
+      if (mmsi === state.activeMmsi && state.selectionRing) {
+        state.selectionRing.setLatLng([v.lat, v.lon]);
+      }
+      const layer = state.historyLayers.get(mmsi);
+      if (layer) {
+        const latlngs = layer.polyline.getLatLngs();
         if (latlngs && latlngs.length > 0) {
           latlngs[latlngs.length - 1] = new L.LatLng(v.lat, v.lon);
-          state.historyPolyline.setLatLngs(latlngs);
+          layer.polyline.setLatLngs(latlngs);
         }
       }
     }
   } else {
-    const marker = L.marker([v.lat, v.lon], { icon: shipIcon(color, heading), title: v.name || mmsi });
+    const marker = L.marker([v.lat, v.lon], { icon: shipIcon(color, heading, isPinned, isActive), title: v.name || mmsi });
     marker.on('click', () => selectVessel(mmsi));
     marker.bindPopup('', { maxWidth: 240, autoPan: false });
     marker.on('popupopen', () => {
@@ -121,25 +155,49 @@ export function addOrUpdateVessel(v) {
   }
 }
 
-function updateMarkerVisibility(marker, v) {
-  const searchVal = document.getElementById('search')?.value.toLowerCase() || '';
-  const catVal = document.getElementById('type-filter')?.value || 'all';
-  
-  let visible = true;
-  const name = (v.name || '').toLowerCase();
-  const mmsi = v.mmsi;
+export function updateVesselMarkerStyle(mmsi) {
+  const v = state.vessels[mmsi];
+  if (!v) return;
+  const { color } = vesselTypeInfo(v.data.type, v.data.vtype_info);
+  const heading = v.data.heading ?? v.data.cog ?? 0;
+  const isPinned = state.selectedMmsis.has(mmsi);
+  const isActive = (mmsi === state.activeMmsi);
+  v.marker.setIcon(shipIcon(color, heading, isPinned, isActive));
+}
 
-  if (searchVal && !name.includes(searchVal) && !mmsi.includes(searchVal)) {
-    visible = false;
-  }
-  
-  if (visible && catVal && catVal !== 'all') {
-    const ti = vesselTypeInfo(v.type, v.vtype_info);
-    if (ti.category !== catVal) visible = false;
+function updateMarkerVisibility(marker, v) {
+  const hideOthers = document.getElementById('hide-others')?.checked;
+  const isPinned = state.selectedMmsis.has(v.mmsi);
+  const isActive = (v.mmsi === state.activeMmsi);
+
+  let visible = true;
+  if (hideOthers) {
+    // If "Hide Others" is ON, we only show pinned or active vessels.
+    visible = isPinned || isActive;
+  } else {
+    // If "Hide Others" is OFF, we show vessels matching the search/category filter.
+    const searchVal = document.getElementById('search')?.value.toLowerCase() || '';
+    const catVal = document.getElementById('type-filter')?.value || 'all';
+    
+    let isMatch = true;
+    const name = (v.name || '').toLowerCase();
+    const mmsi = v.mmsi;
+
+    if (searchVal && !name.includes(searchVal) && !mmsi.includes(searchVal)) {
+      isMatch = false;
+    }
+    
+    if (isMatch && catVal && catVal !== 'all') {
+      const ti = vesselTypeInfo(v.type, v.vtype_info);
+      if (ti.category !== catVal) isMatch = false;
+    }
+    
+    visible = isMatch;
   }
 
   if (visible) {
     if (!map.hasLayer(marker)) marker.addTo(map);
+    marker.setOpacity(1);
   } else {
     if (map.hasLayer(marker)) map.removeLayer(marker);
   }

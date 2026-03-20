@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { vesselTypeInfo } from './utils.js';
-import { clearHistory, renderHistory, clearSelectionRing, showSelectionRing, map, syncMapMarkersVisibility } from './map.js';
+import { clearHistory, renderHistory, clearSelectionRing, showSelectionRing, map, syncMapMarkersVisibility, updateVesselMarkerStyle } from './map.js';
 import { fetchHistoryData, fetchSearchResults } from './api.js';
 
 export function scheduleListUpdate() {
@@ -48,6 +48,12 @@ export function updateVesselList(filter = null) {
       return (v.name || '').toLowerCase().includes(searchVal) || v.mmsi.includes(searchVal);
     })
     .sort((a, b) => {
+      const isASelected = state.selectedMmsis.has(a.mmsi) || a.mmsi === state.activeMmsi;
+      const isBSelected = state.selectedMmsis.has(b.mmsi) || b.mmsi === state.activeMmsi;
+      
+      if (isASelected && !isBSelected) return -1;
+      if (!isASelected && isBSelected) return 1;
+      
       const na = a.name || 'zzz';
       const nb = b.name || 'zzz';
       return na.localeCompare(nb);
@@ -61,15 +67,17 @@ export function updateVesselList(filter = null) {
     const liveData = state.vessels[v.mmsi]?.data;
     const type = liveData ? liveData.type : null;
     const ti = vesselTypeInfo(type, liveData?.vtype_info);
-    const isActive = v.mmsi === state.selectedMmsi;
-    
     const speedStr = liveData && liveData.sog != null ? liveData.sog.toFixed(1) + ' kn' : '';
     const dotStyle = v.is_live ? `background:${ti.color}; box-shadow: 0 0 4px ${ti.color};` : `background:var(--text-muted); opacity:0.5;`;
     
     const latestDate = new Date(v.latest_ts * 1000);
     const timeStr = v.latest_ts > 0 ? latestDate.toLocaleString('fi-FI', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : 'Unknown';
 
+    const isSelected = state.selectedMmsis.has(v.mmsi);
+    const isActive = v.mmsi === state.activeMmsi;
+
     html += `<div class="vessel-item${isActive ? ' active' : ''}" data-mmsi="${v.mmsi}">
+      <input type="checkbox" class="vessel-pin" ${isSelected ? 'checked' : ''} data-mmsi="${v.mmsi}" title="Pin track to map">
       <div class="vessel-dot" style="${dotStyle}"></div>
       <div class="vessel-info">
         <div class="vessel-name">${v.name || '(Unknown)'}</div>
@@ -138,12 +146,48 @@ export function populateTypeFilter(categories) {
   filterEl.appendChild(optOther);
 }
 
-export function selectVessel(mmsi) {
-  if (state.selectedMmsi !== mmsi) clearHistory();
-  state.selectedMmsi = mmsi;
+export function updateResultsHeaderVisibility() {
+  const header = document.querySelector('.vessel-list-header');
+  if (!header) return;
+  const hasSelection = state.selectedMmsis.size > 0 || state.activeMmsi !== null;
+  
+  if (!hasSelection) {
+    const toggle = document.getElementById('hide-others');
+    if (toggle && toggle.checked) {
+      toggle.checked = false;
+      syncMapMarkersVisibility();
+    }
+  }
+
+  header.style.display = hasSelection ? 'flex' : 'none';
+}
+
+export function selectVessel(mmsi, pin = true) {
+  const prevActive = state.activeMmsi;
+  state.activeMmsi = mmsi;
+  
+  if (pin) state.selectedMmsis.add(mmsi);
+  updateVesselMarkerStyle(mmsi);
+
+  // Re-sort list to bring active/pinned to top
+  updateVesselList();
+
+  // If the active vessel changed, we should re-render its history to get full detail
+  if (prevActive && prevActive !== mmsi) {
+    const prevLayer = state.historyLayers.get(prevActive);
+    if (prevLayer && !state.selectedMmsis.has(prevActive)) {
+        clearHistory(prevActive);
+    } else if (prevLayer) {
+        // Downgrade previous active to pinned status (simplified)
+        loadAndRenderHistory(prevActive);
+    }
+    updateVesselMarkerStyle(prevActive);
+  }
 
   document.querySelectorAll('.vessel-item').forEach(el => {
     el.classList.toggle('active', el.dataset.mmsi === mmsi);
+    const cb = el.querySelector('.vessel-pin');
+    if (cb && el.dataset.mmsi === mmsi && pin) cb.checked = true;
   });
 
   const v = state.vessels[mmsi];
@@ -167,10 +211,18 @@ export function selectVessel(mmsi) {
   document.getElementById('sidebar').classList.remove('collapsed');
 
   loadAndRenderHistory(mmsi);
+  startHistoryPolling();
+  updateResultsHeaderVisibility();
+}
 
+export function startHistoryPolling() {
   if (state.historyPollTimer) clearInterval(state.historyPollTimer);
   state.historyPollTimer = setInterval(() => {
-    if (state.selectedMmsi) loadAndRenderHistory(state.selectedMmsi);
+    // Poll for the active one and all pinned ones
+    if (state.activeMmsi) loadAndRenderHistory(state.activeMmsi);
+    state.selectedMmsis.forEach(m => {
+      if (m !== state.activeMmsi) loadAndRenderHistory(m);
+    });
   }, 30000);
 }
 
@@ -178,7 +230,8 @@ export async function loadAndRenderHistory(mmsi) {
   if (!mmsi) return;
   try {
     const data = await fetchHistoryData(mmsi, state.historyMinutes);
-    if (mmsi !== state.selectedMmsi) return;
+    // Don't render if it was deselected during fetch
+    if (mmsi !== state.activeMmsi && !state.selectedMmsis.has(mmsi)) return;
     const points = (data[mmsi] || []);
     renderHistory(mmsi, points);
   } catch (e) {
@@ -218,9 +271,30 @@ export function updateDetailPanel(mmsi) {
 
 export function initUIListeners() {
   document.getElementById('vessel-list').addEventListener('click', (e) => {
-    const item = e.target.closest('.vessel-item');
-    if (!item) return;
-    selectVessel(item.dataset.mmsi);
+    const pinBtn = e.target.closest('.vessel-pin');
+    const vesselItem = e.target.closest('.vessel-item');
+
+    if (pinBtn) {
+      const mmsi = pinBtn.dataset.mmsi;
+      if (pinBtn.checked) {
+        state.selectedMmsis.add(mmsi);
+        loadAndRenderHistory(mmsi);
+        startHistoryPolling();
+        updateVesselMarkerStyle(mmsi);
+      } else {
+        state.selectedMmsis.delete(mmsi);
+        if (mmsi !== state.activeMmsi) clearHistory(mmsi);
+        else loadAndRenderHistory(mmsi); // Downgrade active style but keep it active
+        updateVesselMarkerStyle(mmsi);
+      }
+      updateVesselList();
+      syncMapMarkersVisibility();
+      updateResultsHeaderVisibility();
+      return;
+    }
+
+    if (!vesselItem) return;
+    selectVessel(vesselItem.dataset.mmsi, false);
   });
 
   let searchTimer = null;
@@ -239,6 +313,36 @@ export function initUIListeners() {
       });
     }, 250);
   });
+  
+  document.getElementById('deselect-all').addEventListener('click', () => {
+    state.selectedMmsis.clear();
+    const prevActive = state.activeMmsi;
+    state.activeMmsi = null;
+    
+    if (state.historyPollTimer) {
+      clearInterval(state.historyPollTimer);
+      state.historyPollTimer = null;
+    }
+
+    clearHistory();
+    clearSelectionRing();
+
+    const toggle = document.getElementById('hide-others');
+    if (toggle) toggle.checked = false;
+    
+    document.getElementById('detail-panel').classList.remove('visible');
+    document.getElementById('sidebar').classList.remove('detail-view');
+
+    // Update markers
+    for (const mmsi of Object.keys(state.vessels)) {
+      updateVesselMarkerStyle(mmsi);
+    }
+    if (prevActive) updateVesselMarkerStyle(prevActive);
+
+    updateVesselList();
+    syncMapMarkersVisibility();
+    updateResultsHeaderVisibility();
+  });
 
   document.getElementById('type-filter').addEventListener('change', () => {
     const query = document.getElementById('search').value.trim();
@@ -249,6 +353,10 @@ export function initUIListeners() {
     });
   });
 
+  document.getElementById('hide-others').addEventListener('change', () => {
+    syncMapMarkersVisibility();
+  });
+
   document.getElementById('search').addEventListener('focus', () => {
     if (window.innerWidth <= 768) {
       document.getElementById('app').classList.add('sidebar-visible');
@@ -257,14 +365,23 @@ export function initUIListeners() {
   });
 
   document.getElementById('detail-close').addEventListener('click', () => {
-    state.selectedMmsi = null;
+    const mmsi = state.activeMmsi;
+    state.activeMmsi = null;
     if (state.historyPollTimer) {
       clearInterval(state.historyPollTimer);
       state.historyPollTimer = null;
     }
     document.getElementById('detail-panel').classList.remove('visible');
     document.getElementById('sidebar').classList.remove('detail-view');
-    clearHistory();
+    
+    if (mmsi) {
+      loadAndRenderHistory(mmsi); // Simplified pin version
+      updateVesselMarkerStyle(mmsi);
+    }
+
+    updateVesselList();
+    updateResultsHeaderVisibility();
+
     clearSelectionRing();
     document.querySelectorAll('.vessel-item.active').forEach(el => el.classList.remove('active'));
   });
@@ -274,7 +391,8 @@ export function initUIListeners() {
       document.querySelectorAll('.history-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.historyMinutes = parseInt(btn.dataset.minutes);
-      if (state.selectedMmsi) loadAndRenderHistory(state.selectedMmsi);
+      if (state.activeMmsi) loadAndRenderHistory(state.activeMmsi);
+      state.selectedMmsis.forEach(m => loadAndRenderHistory(m));
     });
   });
 

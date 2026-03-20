@@ -50,7 +50,7 @@ export function connectWebSocket() {
 
       addOrUpdateVessel(v);
 
-      if (msg.mmsi === state.selectedMmsi) {
+      if (msg.mmsi === state.activeMmsi) {
         updateDetailPanel(msg.mmsi);
       }
 
