@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { heatmapMode, historyMinutes, filterCategory, vesselTypeCache, vessels, hideOthers, activeMmsi, selectedMmsis } from '../lib/stores.js';
   import { fetchHeatmapData, fetchHistoryData } from '../lib/api.js';
-  import { initMap, renderHeatmap, updateMarkerVisibility, renderHistory, clearHistory } from '../lib/map.js';
+  import { initMap, renderHeatmap, updateMarkerVisibility, renderHistory, clearHistory, fitToVessels } from '../lib/map.js';
   import Legend from './Legend.svelte';
 
   let mapElement;
@@ -48,15 +48,26 @@
     const minutes = $historyMinutes;
     const allToTrack = Array.from(new Set([active, ...selected])).filter(Boolean);
 
-    // Simplistic sync: clear all and re-fetch for current selection
-    // In a more complex app, we'd diff the current layers.
-    clearHistory(); 
-    if (!$heatmapMode) {
-      allToTrack.forEach(mmsi => {
-        fetchHistoryData(mmsi, minutes).then(pts => {
-          renderHistory(mmsi, pts);
-        }).catch(e => console.error(`History fetch error for ${mmsi}`, e));
-      });
+    // Skip history if in heatmap mode
+    if ($heatmapMode) {
+      clearHistory();
+    } else {
+      clearHistory(); 
+      if (allToTrack.length > 0) {
+        // First, fit to live positions immediately for responsiveness
+        fitToVessels(allToTrack);
+
+        const promises = allToTrack.map(mmsi => 
+          fetchHistoryData(mmsi, minutes).then(pts => {
+            renderHistory(mmsi, pts);
+          }).catch(e => console.error(`History fetch error for ${mmsi}`, e))
+        );
+
+        // Then, re-fit once history is loaded to include the trails
+        Promise.all(promises).then(() => {
+          fitToVessels(allToTrack);
+        });
+      }
     }
   }
 </script>
