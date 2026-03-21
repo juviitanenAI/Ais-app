@@ -1,6 +1,6 @@
 <script>
   import { get } from 'svelte/store';
-  import { vessels, currentSearchResults, activeMmsi, selectedMmsis, heatmapMode, filterCategory, hideOthers } from '../lib/stores.js';
+  import { vessels, currentSearchResults, activeMmsi, selectedMmsis, heatmapMode, filterCategories, hideOthers } from '../lib/stores.js';
   import { filterVessels, compareVessels, vesselTypeInfo } from '../lib/utils.js';
 
   export let searchTerm = '';
@@ -22,9 +22,9 @@
       
       if ($hideOthers && !isPinned) continue;
 
-      if ($filterCategory && !isPinned) {
+      if ($filterCategories.length > 0 && !isPinned) {
         const liveCat = v.data.vtype_info?.category?.toLowerCase() || 'other';
-        if (liveCat !== $filterCategory) continue;
+        if (!$filterCategories.includes(liveCat)) continue;
       }
       
       if (!combined.has(mmsi)) {

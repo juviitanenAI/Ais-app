@@ -1,12 +1,16 @@
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, cleanup } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import Sidebar from '../components/Sidebar.svelte';
 import { sidebarCollapsed } from '../lib/stores.js';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as api from '../lib/api.js';
 
 describe('Sidebar Component Minimization (Mobile)', () => {
   beforeEach(() => {
+    cleanup();
     sidebarCollapsed.set(false);
+    vi.spyOn(api, 'fetchVesselCategories').mockResolvedValue([]);
+    vi.spyOn(api, 'fetchSearchResults').mockResolvedValue([]);
   });
 
   it('renders the mobile drawer handle', () => {

@@ -170,6 +170,18 @@ def query_vessel_types() -> Dict[str, dict]:
     rows = db.execute("SELECT code, desc_fi, desc_en, color, category FROM vessel_types").fetchall()
     return {r[0]: {"desc_fi": r[1], "desc_en": r[2], "color": r[3], "category": r[4]} for r in rows}
 
+def query_vessel_categories() -> List[Dict[str, str]]:
+    """Palauttaa uniikit kategoriat ja niille asetetun värin."""
+    db = get_db()
+    # Otetaan ensimmäinen löytyvä väri kategoriasta (pitäisi olla sama kaikilla saman kategorian aluksilla)
+    rows = db.execute("""
+        SELECT category, color 
+        FROM vessel_types 
+        GROUP BY category 
+        ORDER BY category
+    """).fetchall()
+    return [{"name": r[0], "color": r[1]} for r in rows if r[0]]
+
 def insert_snapshot_rows(rows: List[Tuple[str, int, float, float, Optional[float], Optional[float], Optional[float]]]) -> None:
     if not rows:
         return
@@ -217,16 +229,17 @@ def insert_snapshot_for_all(ts_floor: int) -> None:
             ))
     insert_snapshot_rows(out)
 
-def query_vessels(q: Optional[str] = None, category: Optional[str] = None, limit: int = 2000) -> List[Tuple[str, str, int, int]]:
+def query_vessels(q: Optional[str] = None, categories: Optional[List[str]] = None, limit: int = 2000) -> List[Tuple[str, str, int, int]]:
     params: List = []
     
     # Base filter for category if provided
     cat_filter_latest = ""
     cat_filter_samples = ""
-    if category:
-        cat_filter_latest = "AND type IN (SELECT code FROM vessel_types WHERE category = ?)"
-        cat_filter_samples = "AND mmsi IN (SELECT mmsi FROM vessel_latest WHERE type IN (SELECT code FROM vessel_types WHERE category = ?))"
-        params.append(category)
+    if categories:
+        placeholders = ",".join("?" for _ in categories)
+        cat_filter_latest = f"AND type IN (SELECT code FROM vessel_types WHERE category IN ({placeholders}))"
+        cat_filter_samples = f"AND mmsi IN (SELECT mmsi FROM vessel_latest WHERE type IN (SELECT code FROM vessel_types WHERE category IN ({placeholders})))"
+        params.extend(categories)
 
     if q:
         like = f"%{q}%"
@@ -259,8 +272,8 @@ def query_vessels(q: Optional[str] = None, category: Optional[str] = None, limit
             LIMIT ?
         """
         params.extend([like, like, like])
-        if category:
-            params.append(category) # For SampleMatch cat_filter
+        if categories:
+            params.extend(categories) # For SampleMatch cat_filter
         params.append(limit)
     else:
         sql = f"""
@@ -290,8 +303,8 @@ def query_vessels(q: Optional[str] = None, category: Optional[str] = None, limit
             ORDER BY name COLLATE NOCASE ASC
             LIMIT ?
         """
-        if category:
-            params.append(category) # For SampleMatch cat_filter
+        if categories:
+            params.extend(categories) # For SampleMatch cat_filter
         params.append(limit)
 
     db = get_db()

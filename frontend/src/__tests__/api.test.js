@@ -21,7 +21,7 @@ describe('API Functions', () => {
         json: () => Promise.resolve(mockResult)
       });
 
-      await fetchSearchResults('query', 'cargo');
+      await fetchSearchResults('query', ['cargo']);
       
       expect(fetch).toHaveBeenCalledWith(expect.stringContaining('q=query'));
       expect(fetch).toHaveBeenCalledWith(expect.stringContaining('category=cargo'));

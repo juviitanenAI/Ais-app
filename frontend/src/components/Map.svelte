@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { heatmapMode, historyMinutes, filterCategory, vesselTypeCache, vessels, hideOthers, activeMmsi, selectedMmsis } from '../lib/stores.js';
+  import { heatmapMode, historyMinutes, filterCategories, vesselTypeCache, vessels, hideOthers, activeMmsi, selectedMmsis } from '../lib/stores.js';
   import { fetchHeatmapData, fetchHistoryData } from '../lib/api.js';
   import { initMap, renderHeatmap, updateMarkerVisibility, renderHistory, clearHistory, fitToVessels } from '../lib/map.js';
   import Legend from './Legend.svelte';
@@ -13,11 +13,12 @@
 
   // Re-fetch heatmap data whenever toggles change
   $: {
-    if ($heatmapMode) {
-      fetchHeatmapData($historyMinutes, $filterCategory).then(pts => {
+    if ($heatmapMode && map) {
+      const hCat = $filterCategories.length === 1 ? $filterCategories[0] : 'all';
+      fetchHeatmapData($historyMinutes, hCat).then(pts => {
         let color = null;
-        if ($filterCategory) {
-          const match = Object.values($vesselTypeCache).find(t => t.category === $filterCategory);
+        if (hCat !== 'all') {
+          const match = Object.values($vesselTypeCache).find(t => t.category === hCat);
           if (match) color = match.color;
         }
         renderHeatmap(pts, color);
@@ -26,18 +27,15 @@
         renderHeatmap([]);
       });
     } else {
-      renderHeatmap([]);
+      clearHistory();
     }
   }
 
   // Reactively hide markers on map when filters or heatmap state changes
   $: {
-    const hMode = $heatmapMode;
-    const fCat = $filterCategory;
-    const hOther = $hideOthers;
-    const currentVessels = Object.values($vessels);
-    for (const v of currentVessels) {
-      if (v.marker) updateMarkerVisibility(v.marker, v.data);
+    const fCats = $filterCategories;
+    if (Object.keys($vessels).length > 0) {
+      Object.values($vessels).forEach(v => updateMarkerVisibility(v.marker, v.data));
     }
   }
 

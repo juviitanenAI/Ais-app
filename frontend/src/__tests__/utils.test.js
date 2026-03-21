@@ -17,12 +17,13 @@ describe('Utility Functions', () => {
       expect(vesselTypeInfo(null)).toEqual({ label: 'Unknown', color: '#8899aa', category: 'other' });
     });
 
-    it('maps Cargo types correctly', () => {
+    it('maps Cargo types using cache', () => {
+      vesselTypeCache.set({ '70': { category: 'cargo', color: '#4a9eff', desc_en: 'Cargo' } });
       expect(vesselTypeInfo(70)).toEqual({ label: 'Cargo', color: '#4a9eff', category: 'cargo' });
-      expect(vesselTypeInfo(79)).toEqual({ label: 'Cargo', color: '#4a9eff', category: 'cargo' });
     });
 
-    it('maps Tanker types correctly', () => {
+    it('maps Tanker types using cache', () => {
+      vesselTypeCache.set({ '80': { category: 'tanker', color: '#ff6b6b', desc_en: 'Tanker' } });
       expect(vesselTypeInfo(80)).toEqual({ label: 'Tanker', color: '#ff6b6b', category: 'tanker' });
     });
 

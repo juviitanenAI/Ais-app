@@ -1,38 +1,16 @@
 <script>
-  import { legendCollapsed, vesselTypeCache, vessels } from '../lib/stores.js';
-
-  // Extract unique categories for the legend
+  import { legendCollapsed } from '../lib/stores.js';
+  import { fetchVesselCategories } from '../lib/api.js';
+  import { onMount } from 'svelte';
+ 
   let categories = [];
-  $: {
-    // 1. Find categories active in the current vessel list
-    const activeCats = new Set();
-    Object.values($vessels).forEach(v => {
-      const c = v.data.vtype_info?.category?.toLowerCase();
-      if (c) activeCats.add(c);
-    });
-
-    // 2. Extract unique categories and their colors from the cache
-    const catsMap = {};
-    Object.values($vesselTypeCache).forEach(type => {
-      const cat = type.category;
-      if (cat && activeCats.has(cat.toLowerCase()) && cat.toLowerCase() !== 'other') {
-        if (!catsMap[cat]) {
-          catsMap[cat] = {
-            color: type.color || 'var(--ship-other)',
-            label: cat.charAt(0).toUpperCase() + cat.slice(1)
-          };
-        }
-      }
-    });
-
-    // 3. Sort for consistency: Passenger, Cargo, Tanker...
-    const order = ["passenger", "cargo", "tanker", "tugboat", "barge", "other"];
-    categories = Object.values(catsMap).sort((a, b) => {
-      const ia = order.indexOf(a.label.toLowerCase());
-      const ib = order.indexOf(b.label.toLowerCase());
-      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-    });
-  }
+  onMount(async () => {
+    try {
+      categories = await fetchVesselCategories();
+    } catch (e) {
+      console.error('Failed to fetch categories for legend:', e);
+    }
+  });
 </script>
 
 <div class="map-legend" class:collapsed={$legendCollapsed} id="map-legend">
@@ -42,14 +20,12 @@
     VESSEL TYPES <span class="toggle-icon">▾</span>
   </div>
   <div id="map-legend-items">
-    {#each categories as cat (cat.label)}
+    {#each categories as cat (cat.name)}
       <div class="legend-row">
-        <div class="legend-dot" style="background:{cat.color}"></div> {cat.label}
+        <div class="legend-dot" style="background:{cat.color}"></div> 
+        <span class="legend-label">{cat.name.charAt(0).toUpperCase() + cat.name.slice(1)}</span>
       </div>
     {/each}
-    <div class="legend-row">
-      <div class="legend-dot" style="background:var(--ship-other)"></div> Other
-    </div>
   </div>
 </div>
 

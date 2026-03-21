@@ -102,13 +102,18 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
     @app.get("/api/vessels")
     def api_vessels(
         q: Optional[str] = Query(default=None, description="Filter by name or MMSI"),
-        category: Optional[str] = Query(default=None, description="Filter by vessel category")
+        category: Optional[List[str]] = Query(default=None, description="Filter by vessel categories")
     ):
-        rows = db.query_vessels(q=q, category=category, limit=2000)
+        rows = db.query_vessels(q=q, categories=category, limit=2000)
         return JSONResponse([
             {"mmsi": r[0], "name": r[1], "is_live": bool(r[2]), "latest_ts": r[3]} 
             for r in rows
         ])
+
+    # --- API: vessel categories (for dropdown/legend) ---
+    @app.get("/api/vessel-categories")
+    def api_vessel_categories():
+        return JSONResponse(db.query_vessel_categories())
 
     # --- API: vessel types (for legend and styling) ---
     @app.get("/api/vessel-types")

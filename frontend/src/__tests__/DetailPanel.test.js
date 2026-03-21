@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/svelte';
 import DetailPanel from '../components/DetailPanel.svelte';
-import { vessels, activeMmsi, currentSearchResults } from '../lib/stores.js';
+import { vessels, activeMmsi, currentSearchResults, selectedMmsis, vesselTypeCache } from '../lib/stores.js';
 
 describe('DetailPanel Component', () => {
   beforeEach(() => {
     cleanup();
     activeMmsi.set(null);
+    selectedMmsis.set(new Set());
+    vesselTypeCache.set({ '70': { category: 'cargo', color: '#444', desc_en: 'Cargo' } });
     vessels.set({});
     currentSearchResults.set([]);
   });

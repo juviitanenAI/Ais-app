@@ -1,11 +1,28 @@
 <script>
-  import { sidebarCollapsed, vessels, wsConnected, heatmapMode, historyMinutes, filterCategory, selectedMmsis, activeMmsi, hideOthers } from '../lib/stores.js';
+  import { sidebarCollapsed, vessels, wsConnected, heatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers } from '../lib/stores.js';
   import { APP_VERSION, MOBILE_VERSION } from '../lib/config.js';
+  import { fetchVesselCategories, fetchSearchResults } from '../lib/api.js';
+  import { onMount } from 'svelte';
+  import MultiSelect from './MultiSelect.svelte';
   import ResultTabs from './ResultTabs.svelte';
   import DetailPanel from './DetailPanel.svelte';
   import HistoryToggle from './HistoryToggle.svelte';
 
   let searchTerm = '';
+  let categories = [];
+
+  onMount(async () => {
+    try {
+      categories = await fetchVesselCategories();
+    } catch (e) {
+      console.error('Failed to fetch categories:', e);
+    }
+  });
+
+  $: {
+    // Re-fetch search results when filters change
+    fetchSearchResults(searchTerm, $filterCategories);
+  }
 
   function clearSelection() {
     selectedMmsis.set(new Set());
@@ -48,14 +65,7 @@
       <input type="text" id="search" placeholder="Search vessel name or MMSI…" autocomplete="off" bind:value={searchTerm}/>
     </div>
     <div class="filter-box">
-      <select id="type-filter" bind:value={$filterCategory}>
-        <option value="">All Vessel Types</option>
-        <option value="cargo">Cargo</option>
-        <option value="tanker">Tanker</option>
-        <option value="passenger">Passenger</option>
-        <option value="fishing">Fishing</option>
-        <option value="other">Other</option>
-      </select>
+      <MultiSelect {categories} onSelectionChange={() => fetchSearchResults(searchTerm, $filterCategories)} />
     </div>
     <HistoryToggle />
   </div>

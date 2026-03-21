@@ -126,12 +126,12 @@ def test_query_vessels_with_category():
     upsert_latest("222", meta={"name": "TANKER SHIP", "type": 80})
     
     # 3. Query by cargo
-    res_cargo = query_vessels(category="cargo")
+    res_cargo = query_vessels(categories=["cargo"])
     assert len(res_cargo) == 1
     assert res_cargo[0][0] == "111"
     
     # 4. Query by tanker
-    res_tanker = query_vessels(category="tanker")
+    res_tanker = query_vessels(categories=["tanker"])
     assert len(res_tanker) == 1
     assert res_tanker[0][0] == "222"
     
