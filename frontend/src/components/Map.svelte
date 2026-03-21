@@ -70,6 +70,12 @@
       }
     }
   }
+
+  // Reactively update marker highlights and selection ring
+  import { updateHighlights } from '../lib/map.js';
+  $: {
+    updateHighlights($activeMmsi, $selectedMmsis);
+  }
 </script>
 
 <div id="map-container">

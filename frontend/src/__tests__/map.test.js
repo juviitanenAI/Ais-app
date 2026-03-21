@@ -26,9 +26,11 @@ global.L = {
   map: vi.fn(() => ({
     setView: vi.fn().mockReturnThis(),
     fitBounds: vi.fn().mockReturnThis(),
+    invalidateSize: vi.fn().mockReturnThis(),
     removeLayer: vi.fn().mockReturnThis(),
     addLayer: vi.fn().mockReturnThis(),
-    hasLayer: vi.fn().mockReturnValue(true)
+    hasLayer: vi.fn().mockReturnValue(true),
+    on: vi.fn().mockReturnThis()
   })),
   tileLayer: vi.fn(() => ({
     addTo: vi.fn().mockReturnThis()

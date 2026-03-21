@@ -6,13 +6,14 @@
   import { sidebarCollapsed, isLoading, activeMmsi } from './lib/stores.js';
   import { fetchVesselTypes, fetchLiveVesselData, fetchSearchResults } from './lib/api.js';
   import { connectWebSocket } from './lib/ws.js';
-  import { addOrUpdateVessel, map as leafMap } from './lib/map.js';
+  import { addOrUpdateVessel, map as leafMap, setAutoFollow } from './lib/map.js';
   import { vessels as vesselsStore } from './lib/stores.js';
   import { vesselTypeInfo, shipIcon } from './lib/utils.js';
   import { get } from 'svelte/store';
 
   function handleSelectVessel(mmsi) {
     activeMmsi.set(mmsi);
+    setAutoFollow(true);
     // Detail panel opening logic will react to activeMmsi
     sidebarCollapsed.set(false);
   }
