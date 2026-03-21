@@ -58,8 +58,11 @@ cover/
 # Django stuff:
 *.log
 local_settings.py
-db.sqlite3
+# SQLite stuff (Allow main DB but ignore temporary journals)
+*.sqlite-shm
+*.sqlite-wal
 db.sqlite3-journal
+remote_db/
 
 # Flask stuff:
 instance/
