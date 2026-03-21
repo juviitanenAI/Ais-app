@@ -60,8 +60,6 @@
 <div class="app-container" class:sidebar-visible={!$sidebarCollapsed}>
   <Sidebar />
   <Map />
-  
-  <button id="sidebar-toggle" title="Toggle sidebar" onclick={() => $sidebarCollapsed = !$sidebarCollapsed}>☰</button>
 </div>
 
 <style>

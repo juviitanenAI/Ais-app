@@ -11,6 +11,11 @@
     selectedMmsis.set(new Set());
     activeMmsi.set(null);
   }
+
+  function toggleSidebar(e) {
+    if (e) e.stopPropagation();
+    sidebarCollapsed.update(v => !v);
+  }
 </script>
 
 <div id="sidebar" class:collapsed={$sidebarCollapsed}>
@@ -35,7 +40,6 @@
       {:else}
         <button id="live-toggle" class="heatmap-btn" onclick={() => heatmapMode.set(true)}>Live ●</button>
       {/if}
-      <button id="mobile-list-close" class="mobile-list-close" title="Close List" onclick={() => $sidebarCollapsed = true}>✕</button>
     </div>
   </div>
 
@@ -73,4 +77,6 @@
 
   <ResultTabs {searchTerm} />
   <DetailPanel />
+
+  <button class="sidebar-handle" onpointerdown={toggleSidebar} aria-label="Toggle sidebar"></button>
 </div>
