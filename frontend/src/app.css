@@ -383,9 +383,13 @@
 
     /* ---- Detail panel ---- */
     .detail-panel {
-      border-top: 1px solid var(--border);
-      padding: 16px;
+      background: var(--bg-card);
+      border-top: 2px solid var(--accent);
+      padding: 20px 16px;
       display: none;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+      position: relative;
+      z-index: 5;
     }
 
     .detail-panel.visible { display: block; }
@@ -398,8 +402,10 @@
     }
 
     .detail-name {
-      font-size: 15px;
-      font-weight: 600;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.5px;
     }
 
     .detail-close {
@@ -423,9 +429,17 @@
     }
 
     .detail-field {
-      background: var(--bg-card);
-      padding: 8px 10px;
-      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      transition: all 0.2s ease;
+    }
+
+    .detail-field:hover {
+      background: rgba(0, 0, 0, 0.3);
+      border-color: var(--accent-dim);
+      transform: translateY(-1px);
     }
 
     .detail-label {
@@ -446,13 +460,6 @@
       display: flex;
       gap: 4px;
       margin-top: 8px;
-    }
-
-    .detail-history-controls {
-      display: block;
-      margin-top: 16px;
-      border-top: 1px solid var(--border);
-      padding-top: 16px;
     }
 
     .history-btn {

@@ -1,7 +1,6 @@
 <script>
   import { vessels, activeMmsi, currentSearchResults, historyMinutes } from '../lib/stores.js';
   import { vesselTypeInfo } from '../lib/utils.js';
-  import HistoryToggle from './HistoryToggle.svelte';
 
   let mmsi = null;
   let name = '(Unknown)', typeLab = 'Unknown', typeCol = '#8899aa';
@@ -42,9 +41,5 @@
     <div class="detail-field"><div class="detail-label">Heading</div><div class="detail-value">{hdg}</div></div>
     <div class="detail-field"><div class="detail-label">Course</div><div class="detail-value">{cog}</div></div>
     <div class="detail-field"><div class="detail-label">Destination</div><div class="detail-value">{dest}</div></div>
-  </div>
-  
-  <div class="detail-history-controls">
-    <HistoryToggle />
   </div>
 </div>
