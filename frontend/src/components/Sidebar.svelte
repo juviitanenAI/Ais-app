@@ -1,5 +1,5 @@
 <script>
-  import { sidebarCollapsed, vessels, wsConnected, heatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels } from '../lib/stores.js';
+  import { sidebarCollapsed, vessels, wsConnected, heatmapMode, toggleHeatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels } from '../lib/stores.js';
   import { APP_VERSION, MOBILE_VERSION } from '../lib/config.js';
   import { fetchVesselCategories, fetchSearchResults } from '../lib/api.js';
   import { onMount } from 'svelte';
@@ -53,9 +53,9 @@
     </div>
     <div class="stat right-stat">
       {#if $heatmapMode}
-        <button id="heatmap-toggle" class="heatmap-btn active" onclick={() => heatmapMode.set(false)}>🔥 Heatmap</button>
+        <button id="heatmap-toggle" class="heatmap-btn active" onclick={() => toggleHeatmapMode(false)}>🔥 Heatmap</button>
       {:else}
-        <button id="live-toggle" class="heatmap-btn" onclick={() => heatmapMode.set(true)}>Live ●</button>
+        <button id="live-toggle" class="heatmap-btn" onclick={() => toggleHeatmapMode(true)}>Live ●</button>
       {/if}
     </div>
   </div>

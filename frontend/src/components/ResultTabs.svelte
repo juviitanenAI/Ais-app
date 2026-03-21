@@ -1,38 +1,32 @@
 <script>
   import VesselList from './VesselList.svelte';
-  import { vessels, filteredVessels } from '../lib/stores.js';
+  import { vessels, filteredVessels, activeTab, switchSecondaryTab } from '../lib/stores.js';
 
   export let searchTerm = '';
-
-  let activeTab = 'vessels'; // 'vessels' or 'stats'
-
-  function setTab(tab) {
-    activeTab = tab;
-  }
 </script>
 
 <div class="results-container">
   <div class="tabs-header">
     <button 
       class="tab-btn" 
-      class:active={activeTab === 'vessels'} 
-      onclick={() => setTab('vessels')}
+      class:active={$activeTab === 'vessels'} 
+      onclick={() => switchSecondaryTab('vessels')}
     >
       Vessels ({$filteredVessels.length})
     </button>
     <button 
       class="tab-btn" 
-      class:active={activeTab === 'stats'} 
-      onclick={() => setTab('stats')}
+      class:active={$activeTab === 'stats'} 
+      onclick={() => switchSecondaryTab('stats')}
     >
       Stats
     </button>
   </div>
 
   <div class="tab-content">
-    {#if activeTab === 'vessels'}
+    {#if $activeTab === 'vessels'}
       <VesselList {searchTerm} />
-    {:else if activeTab === 'stats'}
+    {:else if $activeTab === 'stats'}
       <div class="stats-placeholder">
         <h3>Vessel Statistics</h3>
         <p>This is where we can show distribution by type, speed averages, etc.</p>
