@@ -1,8 +1,9 @@
 <script>
   import { sidebarCollapsed, vessels, wsConnected, heatmapMode, historyMinutes, filterCategory, selectedMmsis, activeMmsi, hideOthers } from '../lib/stores.js';
   import { APP_VERSION, MOBILE_VERSION } from '../lib/config.js';
-  import VesselList from './VesselList.svelte';
+  import ResultTabs from './ResultTabs.svelte';
   import DetailPanel from './DetailPanel.svelte';
+  import HistoryToggle from './HistoryToggle.svelte';
 
   let searchTerm = '';
 
@@ -52,12 +53,7 @@
         <option value="other">Other</option>
       </select>
     </div>
-    <div class="history-controls">
-      <button class="history-btn" class:active={$historyMinutes === 60} onclick={() => historyMinutes.set(60)}>1h</button>
-      <button class="history-btn" class:active={$historyMinutes === 180} onclick={() => historyMinutes.set(180)}>3h</button>
-      <button class="history-btn" class:active={$historyMinutes === 720} onclick={() => historyMinutes.set(720)}>12h</button>
-      <button class="history-btn" class:active={$historyMinutes === 1440} onclick={() => historyMinutes.set(1440)}>24h</button>
-    </div>
+    <HistoryToggle />
   </div>
 
   {#if $selectedMmsis.size > 0 || $activeMmsi}
@@ -75,6 +71,6 @@
     </div>
   {/if}
 
-  <VesselList {searchTerm} />
+  <ResultTabs {searchTerm} />
   <DetailPanel />
 </div>

@@ -1,6 +1,7 @@
 <script>
   import { vessels, activeMmsi, currentSearchResults, historyMinutes } from '../lib/stores.js';
   import { vesselTypeInfo } from '../lib/utils.js';
+  import HistoryToggle from './HistoryToggle.svelte';
 
   let mmsi = null;
   let name = '(Unknown)', typeLab = 'Unknown', typeCol = '#8899aa';
@@ -26,9 +27,6 @@
     }
   }
 
-  function setHistory(min) {
-    historyMinutes.set(min);
-  }
 </script>
 
 <div class="detail-panel" class:visible={$activeMmsi !== null}>
@@ -47,11 +45,6 @@
   </div>
   
   <div class="detail-history-controls">
-    <div class="history-controls">
-      <button class="history-btn" class:active={$historyMinutes === 60} onclick={() => setHistory(60)}>1h</button>
-      <button class="history-btn" class:active={$historyMinutes === 180} onclick={() => setHistory(180)}>3h</button>
-      <button class="history-btn" class:active={$historyMinutes === 720} onclick={() => setHistory(720)}>12h</button>
-      <button class="history-btn" class:active={$historyMinutes === 1440} onclick={() => setHistory(1440)}>24h</button>
-    </div>
+    <HistoryToggle />
   </div>
 </div>
