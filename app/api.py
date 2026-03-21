@@ -16,7 +16,7 @@ from .scripts.update_vessel_types import update_vessel_types
 from .db import rebuild_heatmap_cache
 from .scripts.update_vessel_types import update_vessel_types
 
-TEMPLATES = Path(__file__).parent / "templates"
+FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 
 def create_app(ws_mgr: WebSocketManager) -> FastAPI:
     @asynccontextmanager
@@ -93,15 +93,10 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
     # --- UI ---
     @app.get("/")
     def root():
-        return HTMLResponse(
-            (TEMPLATES / "map_ui.html").read_text(encoding="utf-8")
-        )
-
-    @app.get("/simple")
-    def simple_ui():
-        return HTMLResponse(
-            (TEMPLATES / "simple_ui.html").read_text(encoding="utf-8")
-        )
+        idx_path = FRONTEND_DIST / "index.html"
+        if idx_path.exists():
+            return HTMLResponse(idx_path.read_text(encoding="utf-8"))
+        return HTMLResponse("Svelte frontend not built. Run 'npm run build' in frontend directory.", status_code=404)
 
     # --- API: vessel catalog (name/MMSI search) ---
     @app.get("/api/vessels")

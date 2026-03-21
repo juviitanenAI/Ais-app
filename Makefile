@@ -1,4 +1,4 @@
-.PHONY: deploy sync install test bump_version calculate-views
+.PHONY: deploy sync install test dev bump_version calculate-views build-frontend
 
 -include .env
 
@@ -6,21 +6,25 @@ REMOTE_USER ?= dummy
 REMOTE_HOST ?= dummy
 REMOTE_DIR ?= /home/$(REMOTE_USER)/publicwsgi/ais-app
 
-deploy: test bump_version sync install
+deploy: test build-frontend bump_version sync install
 ifdef CALC
 	$(MAKE) calculate-views
 endif
 	@ssh $(REMOTE_USER)@$(REMOTE_HOST) "pkill -f 'uvicorn main:app' || true"
 	@echo "Deployment to $(REMOTE_HOST) complete!"
 
+build-frontend:
+	@echo "Building Svelte frontend..."
+	@cd frontend && npm install && npm run build
+
 calculate-views:
 	ssh $(REMOTE_USER)@$(REMOTE_HOST) "cd $(REMOTE_DIR) && .venv/bin/python main.py --calculate-views"
 
 bump_version:
-	@python3 -c "import re; fp='app/static/js/config.js'; c=open(fp).read(); m=re.search(r\"const APP_VERSION = '(\d+)\.(\d+)';\", c); \
+	@python3 -c "import re; fp='frontend/src/lib/config.js'; c=open(fp).read(); m=re.search(r\"export const APP_VERSION = '(\d+)\.(\d+)';\", c); \
 	ma, mi = (int(m.group(1)), int(m.group(2))) if m else (0,0); \
 	v=f'{ma + (mi >= 9)}.{ (mi + 1) % 10 }' if m else None; \
-	open(fp, 'w').write(re.sub(r\"const APP_VERSION = '(\d+)\.(\d+)';\", f\"const APP_VERSION = '{v}';\", c)) if v else None; \
+	open(fp, 'w').write(re.sub(r\"export const APP_VERSION = '(\d+)\.(\d+)';\", f\"export const APP_VERSION = '{v}';\", c)) if v else None; \
 	print(f'Bumped version to {v}' if v else 'Version string not found');"
 
 test:
@@ -33,10 +37,14 @@ test:
 		python3 -m pytest tests/ ; \
 	fi
 	@echo "Running JavaScript frontend tests..."
-	@npm run test:js
+	@cd frontend && npm run test
+
+dev:
+	@echo "Starting FastAPI backend and Vite Svelte dev server..."
+	@trap 'kill %1' EXIT; python3 main.py & cd frontend && npm run dev
 
 sync:
-	rsync -avz --exclude='.venv' --exclude='__pycache__' --exclude='.git' --exclude='*.sqlite*' ./ $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/
+	rsync -avz --exclude='.venv' --exclude='__pycache__' --exclude='.git' --exclude='*.sqlite*' --exclude='frontend/node_modules' ./ $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/
 
 install:
 	ssh $(REMOTE_USER)@$(REMOTE_HOST) "cd $(REMOTE_DIR) && ( [ -f '.venv/bin/pip' ] || rm -rf .venv ) && [ ! -d '.venv' ] && virtualenv -p python3 --system-site-packages .venv || true && .venv/bin/pip install -r requirements.txt"

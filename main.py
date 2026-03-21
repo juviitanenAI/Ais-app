@@ -31,20 +31,17 @@ def build_app_and_services():
     # Create FastAPI app (routes: /, /api/vessels, /api/history, /ws)
     app = create_app(ws_mgr)
 
-    # ---- Static & favicon (safe only AFTER app exists) ----
-    # static folder: app/static
-    static_dir = Path(__file__).parent / "app" / "static"
-    static_dir.mkdir(parents=True, exist_ok=True)
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
-    favicon_path = static_dir / "favicon.ico"
+    # Vite compiled frontend assets
+    frontend_dist = Path(__file__).parent / "frontend" / "dist"
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
     @app.get("/favicon.ico")
     async def favicon():
-        # If you don't have a favicon yet, you can add one to app/static/favicon.ico later.
-        if favicon_path.exists():
-            return FileResponse(str(favicon_path), media_type="image/x-icon")
-        # Return 204 No Content if missing (avoids 404 spam in logs)
+        fav = frontend_dist / "favicon.ico"
+        if fav.exists():
+            return FileResponse(str(fav), media_type="image/x-icon")
         from fastapi import Response
         return Response(status_code=204)
 
