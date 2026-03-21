@@ -21,11 +21,7 @@ calculate-views:
 	ssh $(REMOTE_USER)@$(REMOTE_HOST) "cd $(REMOTE_DIR) && .venv/bin/python main.py --calculate-views"
 
 bump_version:
-	@python3 -c "import re; fp='frontend/src/lib/config.js'; c=open(fp).read(); m=re.search(r\"export const APP_VERSION = '(\d+)\.(\d+)';\", c); \
-	ma, mi = (int(m.group(1)), int(m.group(2))) if m else (0,0); \
-	v=f'{ma + (mi >= 9)}.{ (mi + 1) % 10 }' if m else None; \
-	open(fp, 'w').write(re.sub(r\"export const APP_VERSION = '(\d+)\.(\d+)';\", f\"export const APP_VERSION = '{v}';\", c)) if v else None; \
-	print(f'Bumped version to {v}' if v else 'Version string not found');"
+	@python3 scripts/bump_version.py
 
 test:
 	@echo "Running Python backend tests..."
