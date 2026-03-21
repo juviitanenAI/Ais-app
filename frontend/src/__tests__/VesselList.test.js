@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, cleanup } from '@testing-library/svelte';
 import VesselList from '../components/VesselList.svelte';
-import { vessels, selectedMmsis, activeMmsi } from '../lib/stores.js';
+import { vessels, selectedMmsis, activeMmsi, filterCategories, currentSearchResults } from '../lib/stores.js';
 
 describe('VesselList Component', () => {
   beforeEach(() => {
@@ -9,6 +9,8 @@ describe('VesselList Component', () => {
     vessels.set({});
     selectedMmsis.set(new Set());
     activeMmsi.set(null);
+    filterCategories.set([]);
+    currentSearchResults.set([]);
   });
 
   it('displays "No vessels found" when empty', () => {
@@ -37,5 +39,26 @@ describe('VesselList Component', () => {
     expect(text).toContain('Speedy');
     expect(text).toContain('111111111');
     expect(text).toContain('20.5 kn'); // Formatted Speed
+  });
+
+  it('filters live vessels by category', async () => {
+    vessels.set({
+      '111': {
+        data: { mmsi: '111', name: 'Cargo Ship', vtype_info: { category: 'cargo', color: 'blue' } },
+        lastUpdate: Date.now()
+      },
+      '222': {
+        data: { mmsi: '222', name: 'Tanker Ship', vtype_info: { category: 'tanker', color: 'red' } },
+        lastUpdate: Date.now()
+      }
+    });
+
+    filterCategories.set(['cargo']);
+
+    render(VesselList);
+    
+    const text = document.querySelector('.vessel-list').textContent;
+    expect(text).toContain('Cargo Ship');
+    expect(text).not.toContain('Tanker Ship');
   });
 });

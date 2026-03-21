@@ -1,5 +1,5 @@
 <script>
-  import { sidebarCollapsed, vessels, wsConnected, heatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers } from '../lib/stores.js';
+  import { sidebarCollapsed, vessels, wsConnected, heatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels } from '../lib/stores.js';
   import { APP_VERSION, MOBILE_VERSION } from '../lib/config.js';
   import { fetchVesselCategories, fetchSearchResults } from '../lib/api.js';
   import { onMount } from 'svelte';
@@ -46,7 +46,7 @@
   <div class="stats-bar">
     <div class="stat left-stat">
       <div class="stat-dot"></div>
-      <span id="vessel-count">{Object.keys($vessels).length}</span> vessels
+      <span id="vessel-count">{$filteredVessels.length}</span> vessels
     </div>
     <div class="mobile-branding">
       ⚓&nbsp;&nbsp; AIS Tracker&nbsp;&nbsp;v<span class="app-version">{MOBILE_VERSION}</span>
@@ -65,7 +65,7 @@
       <input type="text" id="search" placeholder="Search vessel name or MMSI…" autocomplete="off" bind:value={searchTerm}/>
     </div>
     <div class="filter-box">
-      <MultiSelect {categories} onSelectionChange={() => fetchSearchResults(searchTerm, $filterCategories)} />
+      <MultiSelect {categories} />
     </div>
     <HistoryToggle />
   </div>

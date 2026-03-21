@@ -1,6 +1,6 @@
 <script>
   import VesselList from './VesselList.svelte';
-  import { vessels } from '../lib/stores.js';
+  import { vessels, filteredVessels } from '../lib/stores.js';
 
   export let searchTerm = '';
 
@@ -18,7 +18,7 @@
       class:active={activeTab === 'vessels'} 
       onclick={() => setTab('vessels')}
     >
-      Vessels ({Object.keys($vessels).length})
+      Vessels ({$filteredVessels.length})
     </button>
     <button 
       class="tab-btn" 
