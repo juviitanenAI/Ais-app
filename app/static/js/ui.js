@@ -53,6 +53,8 @@ function toggleHeatmapMode() {
   
   syncMapMarkersVisibility();
   refreshHeatmap();
+  updateVesselList();
+  updateResultsHeaderVisibility();
 }
 
 export function updateVesselCount(count) {
@@ -106,8 +108,11 @@ export function updateVesselList(filter = null) {
     const isSelected = state.selectedMmsis.has(v.mmsi);
     const isActive = v.mmsi === state.activeMmsi;
 
-    html += `<div class="vessel-item${isActive ? ' active' : ''}" data-mmsi="${v.mmsi}">
-      <input type="checkbox" class="vessel-pin" ${isSelected ? 'checked' : ''} data-mmsi="${v.mmsi}" title="Pin track to map">
+    const heatmapSelectionClass = state.heatmapMode ? '' : (isActive ? ' active' : '');
+    const checkboxStyle = state.heatmapMode ? 'display:none' : '';
+
+    html += `<div class="vessel-item${heatmapSelectionClass}" data-mmsi="${v.mmsi}">
+      <input type="checkbox" class="vessel-pin" ${isSelected ? 'checked' : ''} data-mmsi="${v.mmsi}" title="Pin track to map" style="${checkboxStyle}">
       <div class="vessel-dot" style="${dotStyle}"></div>
       <div class="vessel-info">
         <div class="vessel-name">${v.name || '(Unknown)'}</div>
@@ -175,7 +180,6 @@ export function populateTypeFilter(categories) {
   optOther.textContent = 'Other';
   filterEl.appendChild(optOther);
 }
-
 export function updateResultsHeaderVisibility() {
   const header = document.querySelector('.vessel-list-header');
   if (!header) return;
@@ -189,7 +193,7 @@ export function updateResultsHeaderVisibility() {
     }
   }
 
-  header.style.display = hasSelection ? 'flex' : 'none';
+  header.style.display = (hasSelection && !state.heatmapMode) ? 'flex' : 'none';
 }
 
 export function selectVessel(mmsi, pin = true) {
@@ -339,6 +343,8 @@ export function updateDetailPanel(mmsi) {
 
 export function initUIListeners() {
   document.getElementById('vessel-list').addEventListener('click', (e) => {
+    if (state.heatmapMode) return; // Disable selection in heatmap mode
+
     const pinBtn = e.target.closest('.vessel-pin');
     const vesselItem = e.target.closest('.vessel-item');
 
