@@ -55,6 +55,7 @@ def init_schema() -> None:
         """)
         db.execute("CREATE INDEX IF NOT EXISTS idx_samples_mmsi_ts ON vessel_samples(mmsi, ts);")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_samples_mmsi_ts ON vessel_samples(mmsi, ts);")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_samples_ts ON vessel_samples(ts);")
 
         # Alusten tyyppien kuvaukset ja värit
         db.execute("""
@@ -66,6 +67,18 @@ def init_schema() -> None:
             category TEXT
         );
         """)
+
+        db.execute("""
+        CREATE TABLE IF NOT EXISTS heatmap_cache (
+            time_window INTEGER,
+            category TEXT,
+            lat_grid REAL,
+            lon_grid REAL,
+            weight INTEGER,
+            PRIMARY KEY (time_window, category, lat_grid, lon_grid)
+        );
+        """)
+
 
 def upsert_latest(mmsi: str, loc: Optional[dict] = None, meta: Optional[dict] = None) -> None:
     """Päivitä viimeisin rivi yhdellä UPSERTillä."""
@@ -308,3 +321,54 @@ def query_history(mmsis: List[str], since_sec: int) -> Dict[str, List[dict]]:
 # Alusta skeema moduulin latauksen yhteydessä
 # init_schema() - Removed top-level call to prevent startup crashes if DB is locked.
 # It is now called explicitly in the FastAPI lifespan.
+
+def rebuild_heatmap_cache() -> None:
+    now = int(time.time())
+    windows = [60, 180, 720, 1440]
+    db = get_db()
+    
+    with _db_lock, db:
+        db.execute("DELETE FROM heatmap_cache")
+        
+    for w in windows:
+        print(f"[Heatmap] Building cache for {w}m...", flush=True)
+        cutoff = now - w * 60
+        
+        with _db_lock, db:
+            # Aggregate per category
+            db.execute("""
+                INSERT OR REPLACE INTO heatmap_cache (time_window, category, lat_grid, lon_grid, weight)
+                SELECT ?,
+                       COALESCE(vt.category, 'other'),
+                       ROUND(vs.lat, 3),
+                       ROUND(vs.lon, 3),
+                       COUNT(*)
+                FROM vessel_samples vs
+                JOIN vessel_latest vl ON vs.mmsi = vl.mmsi
+                LEFT JOIN vessel_types vt ON vl.type = vt.code
+                WHERE vs.ts >= ?
+                GROUP BY COALESCE(vt.category, 'other'), ROUND(vs.lat, 3), ROUND(vs.lon, 3)
+            """, (w, cutoff))
+
+            # Aggregate 'all' independent of category
+            db.execute("""
+                INSERT OR REPLACE INTO heatmap_cache (time_window, category, lat_grid, lon_grid, weight)
+                SELECT ?,
+                       'all',
+                       ROUND(vs.lat, 3),
+                       ROUND(vs.lon, 3),
+                       COUNT(*)
+                FROM vessel_samples vs
+                WHERE vs.ts >= ?
+                GROUP BY ROUND(vs.lat, 3), ROUND(vs.lon, 3)
+            """, (w, cutoff))
+
+def query_heatmap_cache(minutes: int, category: Optional[str] = None) -> List[List[float]]:
+    db = get_db()
+    cat_filter = category.lower() if category and category.lower() != "all" else "all"
+    
+    sql = "SELECT lat_grid, lon_grid, weight FROM heatmap_cache WHERE time_window = ? AND category = ?"
+    rows = db.execute(sql, (minutes, cat_filter)).fetchall()
+    
+    # Leaflet heat plugin format: [lat, lon, intensity]
+    return [[r[0], r[1], float(r[2])] for r in rows]

@@ -34,3 +34,13 @@ export async function fetchVesselTypes() {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   state.vessel_type_cache = await res.json();
 }
+
+export async function fetchHeatmapData(minutes, category) {
+  const params = new URLSearchParams({ minutes });
+  if (category && category !== 'all') {
+    params.append('category', category);
+  }
+  const res = await fetch(`${API_BASE}/api/heatmap?${params.toString()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
+}

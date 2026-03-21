@@ -13,6 +13,8 @@ from .ws_manager import WebSocketManager
 from .mqtt_client import MqttService
 from .snapshot import sampler_task
 from .scripts.update_vessel_types import update_vessel_types
+from .db import rebuild_heatmap_cache
+from .scripts.update_vessel_types import update_vessel_types
 
 TEMPLATES = Path(__file__).parent / "templates"
 
@@ -56,6 +58,17 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         
         up_task = asyncio.create_task(weekly_updater())
 
+        # 3. Schedule hourly heatmap cache rebuild
+        async def hourly_heatmap_updater():
+            while True:
+                await asyncio.sleep(60 * 60)  # Wait 1 hour
+                try:
+                    loop.run_in_executor(None, rebuild_heatmap_cache)
+                except Exception as e:
+                    print(f"[Lifespan] Heatmap cache rebuild failed: {e}")
+        
+        heat_task = asyncio.create_task(hourly_heatmap_updater())
+
         # Initial cache load
         try:
             state.vessel_type_cache.update(db.query_vessel_types())
@@ -73,6 +86,7 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         
         s_task.cancel()
         up_task.cancel()
+        heat_task.cancel()
 
     app = FastAPI(lifespan=lifespan)
 
@@ -149,6 +163,14 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         since = int(__import__("time").time()) - max(1, minutes) * 60
         out = db.query_history(mm, since)
         return JSONResponse(out)
+
+    # --- API: route heatmap cache ---
+    @app.get("/api/heatmap")
+    def api_heatmap(minutes: int = 180, category: Optional[str] = None):
+        if minutes not in [60, 180, 720, 1440]:
+            minutes = 180
+        data = db.query_heatmap_cache(minutes, category)
+        return JSONResponse(data)
 
     # --- WebSocket: live vessel updates ---
     @app.websocket("/ws")

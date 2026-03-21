@@ -10,5 +10,7 @@ export const state = {
   wsReconnectTimer: null,
   currentSearchResults: [],
   listUpdateTimer: null,
-  vessel_type_cache: {}   // code -> { color, desc_fi, desc_en, category }
+  vessel_type_cache: {},  // code -> { color, desc_fi, desc_en, category }
+  heatmapMode: false,
+  heatmapLayer: null
 };

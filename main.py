@@ -1,5 +1,6 @@
 # main.py
 import asyncio
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -8,7 +9,7 @@ from fastapi.responses import FileResponse
 
 from app.api import create_app
 from app.ws_manager import WebSocketManager as WSManager
-
+from app import db
 
 def build_app_and_services():
     """
@@ -17,6 +18,15 @@ def build_app_and_services():
     """
     # WS manager shared across HTTP + MQTT
     ws_mgr = WSManager()
+
+    if "--calculate-views" in sys.argv:
+        print("[Startup] --calculate-views flag detected. Building heatmap cache...")
+        try:
+            db.init_schema() # ensure schema is ready before building cache
+            db.rebuild_heatmap_cache()
+            print("[Startup] Heatmap cache built.")
+        except Exception as e:
+            print(f"[Startup] Failed to build heatmap cache: {e}")
 
     # Create FastAPI app (routes: /, /api/vessels, /api/history, /ws)
     app = create_app(ws_mgr)

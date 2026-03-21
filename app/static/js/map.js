@@ -45,6 +45,11 @@ export function showSelectionRing(latlng) {
 }
 
 export function clearHistory(mmsi = null) {
+  if (state.heatmapLayer) {
+    map.removeLayer(state.heatmapLayer);
+    state.heatmapLayer = null;
+  }
+
   if (mmsi) {
     const layer = state.historyLayers.get(mmsi);
     if (layer) {
@@ -59,6 +64,41 @@ export function clearHistory(mmsi = null) {
     });
     state.historyLayers.clear();
   }
+}
+
+export function renderHeatmap(points, color = null) {
+  if (state.heatmapLayer) {
+    map.removeLayer(state.heatmapLayer);
+    state.heatmapLayer = null;
+  }
+  if (!points || !points.length) return;
+  
+  // Leaflet heat requires intensity to be scaled relative to 'max' option.
+  let maxWeight = 1;
+  if (points.length > 0) {
+    maxWeight = Math.max(...points.map(p => p[2]));
+  }
+
+  // Create a gradient based on the category color
+  // default gradient: {0.4: 'blue', 0.65: 'lime', 1: 'red'}
+  let gradient = { 0.4: 'blue', 0.65: 'lime', 1: 'red' }; 
+  if (color) {
+    // Custom gradient toward the category color for a themed look
+    gradient = {
+      0.2: color + '22', // very transparent
+      0.5: color + '88', // semi transparent
+      0.9: color,        // fully opaque category color
+      1.0: '#ffffff'     // white hot center
+    };
+  }
+
+  state.heatmapLayer = L.heatLayer(points, {
+    radius: 15,
+    blur: 18,
+    maxZoom: 10,
+    max: Math.max(1, maxWeight * 0.4), // Increased divisor for lower saturation
+    gradient: gradient
+  }).addTo(map);
 }
 
 export function renderHistory(mmsi, points) {
@@ -170,6 +210,11 @@ export function updateVesselMarkerStyle(mmsi) {
 }
 
 function updateMarkerVisibility(marker, v) {
+  if (state.heatmapMode) {
+    if (map.hasLayer(marker)) map.removeLayer(marker);
+    return false;
+  }
+
   const hideOthers = document.getElementById('hide-others')?.checked;
   const isPinned = state.selectedMmsis.has(v.mmsi);
   const isActive = (v.mmsi === state.activeMmsi);

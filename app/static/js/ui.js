@@ -1,8 +1,8 @@
 import { state } from './state.js';
 import { vesselTypeInfo, compareVessels, filterVessels } from './utils.js';
-import { clearHistory, renderHistory, clearSelectionRing, showSelectionRing, syncMapMarkersVisibility, updateVesselMarkerStyle, zoomToFitSelection } from './map.js';
+import { clearHistory, renderHistory, clearSelectionRing, showSelectionRing, syncMapMarkersVisibility, updateVesselMarkerStyle, zoomToFitSelection, renderHeatmap } from './map.js';
 import { map } from './map_instance.js';
-import { fetchHistoryData, fetchSearchResults } from './api.js';
+import { fetchHistoryData, fetchSearchResults, fetchHeatmapData } from './api.js';
 
 export function scheduleListUpdate() {
   if (state.listUpdateTimer) return;
@@ -10,6 +10,49 @@ export function scheduleListUpdate() {
     state.listUpdateTimer = null;
     updateVesselList();
   }, 2000);
+}
+
+export async function refreshHeatmap() {
+  if (!state.heatmapMode) {
+    if (state.heatmapLayer) {
+      map.removeLayer(state.heatmapLayer);
+      state.heatmapLayer = null;
+    }
+    return;
+  }
+  
+  const category = document.getElementById('type-filter').value;
+  
+  // Find a color for this category
+  let color = null;
+  if (category && category !== 'all') {
+    const match = Object.values(state.vessel_type_cache).find(vt => vt.category === category);
+    if (match) color = match.color;
+    else if (category === 'other') color = '#8899aa'; // Fallback for 'other'
+  }
+
+  try {
+    const data = await fetchHeatmapData(state.historyMinutes, category);
+    renderHeatmap(data, color);
+  } catch (e) {
+    console.error('Failed to fetch heatmap', e);
+  }
+}
+
+function toggleHeatmapMode() {
+  state.heatmapMode = !state.heatmapMode;
+  const statusEl = document.getElementById('ws-status');
+  if (state.heatmapMode) {
+    statusEl.innerHTML = '<span style="color:#ffcc00">🔥 Heatmap</span>';
+    clearSelectionRing();
+    document.getElementById('detail-panel').classList.remove('visible');
+    document.getElementById('sidebar').classList.remove('detail-view');
+  } else {
+    statusEl.innerHTML = 'Live'; // Generic, WS logic will override to connected
+  }
+  
+  syncMapMarkersVisibility();
+  refreshHeatmap();
 }
 
 export function updateVesselCount(count) {
@@ -370,7 +413,20 @@ export function initUIListeners() {
     updateResultsHeaderVisibility();
   });
 
+  document.getElementById('ws-status').addEventListener('click', () => {
+    toggleHeatmapMode();
+  });
+  // Make ws-status visually clickable
+  const wsStatusEl = document.getElementById('ws-status');
+  if (wsStatusEl) {
+    wsStatusEl.style.cursor = 'pointer';
+    wsStatusEl.title = 'Toggle Heatmap Mode';
+  }
+
   document.getElementById('type-filter').addEventListener('change', () => {
+    if (state.heatmapMode) {
+      refreshHeatmap();
+    }
     const query = document.getElementById('search').value.trim();
     const category = document.getElementById('type-filter').value;
     fetchSearchResults(query, category).then(() => {
@@ -407,14 +463,18 @@ export function initUIListeners() {
     
     state.historyMinutes = parseInt(btn.dataset.minutes);
     
-    const promises = [];
-    if (state.activeMmsi) promises.push(loadAndRenderHistory(state.activeMmsi));
-    state.selectedMmsis.forEach(m => {
-      if (m !== state.activeMmsi) promises.push(loadAndRenderHistory(m));
-    });
-    
-    await Promise.all(promises);
-    zoomToFitSelection();
+    if (state.heatmapMode) {
+      refreshHeatmap();
+    } else {
+      const promises = [];
+      if (state.activeMmsi) promises.push(loadAndRenderHistory(state.activeMmsi));
+      state.selectedMmsis.forEach(m => {
+        if (m !== state.activeMmsi) promises.push(loadAndRenderHistory(m));
+      });
+      
+      await Promise.all(promises);
+      zoomToFitSelection();
+    }
   });
 
   document.getElementById('sidebar-toggle').addEventListener('click', () => {
