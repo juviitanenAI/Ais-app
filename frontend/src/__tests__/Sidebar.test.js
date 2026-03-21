@@ -10,7 +10,7 @@ describe('Sidebar Component Minimization (Mobile)', () => {
     cleanup();
     sidebarCollapsed.set(false);
     vi.spyOn(api, 'fetchVesselCategories').mockResolvedValue([]);
-    vi.spyOn(api, 'fetchSearchResults').mockResolvedValue([]);
+    vi.spyOn(api, 'fetchSearchResults').mockResolvedValue(undefined);
   });
 
   it('renders the mobile drawer handle', () => {
