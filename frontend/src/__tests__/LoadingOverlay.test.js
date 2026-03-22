@@ -24,6 +24,6 @@ describe('LoadingOverlay Component', () => {
 
   it('shows the correct loading text', () => {
     render(LoadingOverlay);
-    expect(document.body.textContent).toContain('Connecting to AIS feed…');
+    expect(document.body.textContent).toContain('Loading vessel data…');
   });
 });

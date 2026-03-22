@@ -45,7 +45,7 @@
 
   const pieOptions = {
     responsive: true,
-    maintainAspectRatio: false,
+    maintainAspectRatio: true,
     plugins: {
       legend: { position: 'right', labels: { color: '#ccc' } }
     }
@@ -225,6 +225,7 @@
     display: flex;
     flex-direction: column;
     min-height: 250px;
+    overflow: hidden;
   }
   .chart-box h3 {
     margin: 0 0 15px 0;
@@ -235,6 +236,10 @@
   .chart-wrapper {
     position: relative;
     flex-grow: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .loading {
     display: flex;

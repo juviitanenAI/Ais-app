@@ -3,7 +3,7 @@ import asyncio
 import time
 from typing import Iterable, Set
 from .config import settings
-from . import db
+from . import db, state
 from .ws_manager import WebSocketManager
 
 def floor_to_interval(ts: int, interval: int) -> int:

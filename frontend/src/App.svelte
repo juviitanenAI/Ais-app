@@ -20,8 +20,11 @@
 
   onMount(async () => {
     try {
-      await fetchVesselTypes();
-      const data = await fetchLiveVesselData();
+      // Parallel fetch: vessel types + live data from DB snapshot
+      const [, data] = await Promise.all([
+        fetchVesselTypes(),
+        fetchLiveVesselData()
+      ]);
       
       // Batch initial load to avoid 800 store updates
       vesselsStore.update(vs => {
@@ -42,14 +45,15 @@
         return { ...vs };
       });
       
-      await fetchSearchResults();
       isLoading.set(false);
     } catch (e) {
       console.error('[load] Failed to fetch live vessels:', e);
       setTimeout(() => isLoading.set(false), 2000);
     }
 
+    // Start WS and search in parallel (non-blocking)
     connectWebSocket(handleSelectVessel);
+    fetchSearchResults();
   });
 </script>
 
