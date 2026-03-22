@@ -48,7 +48,7 @@ class MqttService:
             payload = json.loads(msg.payload.decode("utf-8"))
 
             with state.latest_lock:
-                v = state.latest.setdefault(mmsi, {"loc": None, "meta": {}, "last_seen": None})
+                v = state.latest.setdefault(mmsi, {"loc": None, "meta": {}, "last_seen": int(time.time())})
 
                 if kind == "metadata":
                     v["meta"].update(payload)

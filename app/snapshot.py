@@ -48,7 +48,7 @@ async def sampler_task(ws_mgr: WebSocketManager):
             # Prune in-memory state.latest
             with state.latest_lock:
                 cutoff_ts = int(time.time()) - settings.SNAPSHOT_RETENTION_MINUTES * 60
-                stale_mmsis = [mmsi for mmsi, v in state.latest.items() if v.get("last_seen", 0) < cutoff_ts]
+                stale_mmsis = [mmsi for mmsi, v in state.latest.items() if (v.get("last_seen") or 0) < cutoff_ts]
                 for mmsi in stale_mmsis:
                     del state.latest[mmsi]
 
