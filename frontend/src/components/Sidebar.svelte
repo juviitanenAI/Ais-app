@@ -1,5 +1,5 @@
 <script>
-  import { sidebarCollapsed, vessels, wsConnected, heatmapMode, toggleHeatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels, activeTab } from '../lib/stores.js';
+  import { sidebarCollapsed, vessels, wsConnected, heatmapMode, toggleHeatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels, activeTab, heatmapLoading } from '../lib/stores.js';
   import { fade } from 'svelte/transition';
   import { APP_VERSION, MOBILE_VERSION } from '../lib/config.js';
   import { fetchVesselCategories, fetchSearchResults } from '../lib/api.js';
@@ -46,6 +46,12 @@
   </div>
 
   <div class="stats-bar">
+    {#if $heatmapLoading}
+      <div class="heatmap-loading-overlay" transition:fade={{duration: 200}}>
+        <div class="loading-spinner small"></div>
+        <span>Generating heatmap...</span>
+      </div>
+    {/if}
     <div class="stat left-stat">
       <div class="stat-dot"></div>
       <span id="vessel-count">{$filteredVessels.length}</span> vessels
@@ -98,3 +104,43 @@
 
   <button class="sidebar-handle" onpointerdown={toggleSidebar} aria-label="Toggle sidebar"></button>
 </div>
+
+<style>
+  .heatmap-loading-overlay {
+    position: absolute;
+    top: 48px; /* Below header */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 25, 35, 0.7);
+    backdrop-filter: blur(2px);
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 600;
+    gap: 12px;
+  }
+
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    border-top-color: var(--accent-color, #4a9eff);
+    animation: spin 1s ease-in-out infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .loading-spinner.small {
+    width: 24px;
+    height: 24px;
+    border-width: 2px;
+  }
+</style>

@@ -35,18 +35,11 @@
       <VesselList {searchTerm} />
     {:else if $activeTab === 'heatmap'}
       <div class="stats-placeholder">
-        {#if $heatmapLoading}
-          <div class="loading-container">
-            <div class="loading-spinner"></div>
-            <p>Generating heatmap...</p>
-          </div>
-        {:else}
-          <h3>Route Heatmap</h3>
+        <h3>Route Heatmap</h3>
           <p>Visualizing vessel traffic density over time. Use history and category filters above to refine the view.</p>
           <div class="heatmap-info">
             The heatmap is generated from historical samples (15-min intervals).
           </div>
-        {/if}
       </div>
     {:else if $activeTab === 'stats'}
       <div class="stats-placeholder">
@@ -119,27 +112,6 @@
   }
 
 
-  .loading-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 40px 0;
-  }
-
-  .loading-spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid rgba(255, 255, 255, 0.1);
-    border-radius: 50%;
-    border-top-color: var(--accent-color, #4a9eff);
-    animation: spin 1s ease-in-out infinite;
-    margin-bottom: 16px;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
 
   .open-plots-btn {
     margin-top: 20px;
