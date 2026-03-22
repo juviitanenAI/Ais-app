@@ -28,11 +28,11 @@ describe('Sidebar Component Minimization (Mobile)', () => {
     expect(get(sidebarCollapsed)).toBe(false);
     
     // Click to collapse
-    await fireEvent.pointerDown(handle);
+    await fireEvent.click(handle);
     expect(get(sidebarCollapsed)).toBe(true);
     
     // Click to expand
-    await fireEvent.pointerDown(handle);
+    await fireEvent.click(handle);
     expect(get(sidebarCollapsed)).toBe(false);
   });
 });

@@ -11,6 +11,14 @@
       console.error('Failed to fetch categories for legend:', e);
     }
   });
+
+  // Dynamically update parent offset variable
+  $: if (typeof document !== 'undefined') {
+    const root = document.getElementById('map-container');
+    if (root) {
+      root.style.setProperty('--control-offset', $legendCollapsed ? '80px' : '200px');
+    }
+  }
 </script>
 
 <div class="map-legend" class:collapsed={$legendCollapsed} id="map-legend">
@@ -35,13 +43,15 @@
     top: 10px;
     right: 10px;
     z-index: 1000;
-    font-size: 11px;
-    padding: 6px 10px;
-    background: rgba(26, 34, 46, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
+    font-size: 10px; /* Reduced for compactness */
+    padding: 8px 12px;
+    background: rgba(26, 34, 46, 0.95); /* Slightly more opaque */
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px; /* Softer corners */
     color: white;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    width: 130px; /* Fixed width for stability */
   }
   .map-legend.collapsed #map-legend-items {
     display: none;
@@ -72,16 +82,12 @@
     opacity: 0.6;
   }
   
-  /* Push Leaflet's layer selector down to accommodate the legend above it */
   :global(.leaflet-control-layers) {
-    margin-top: 160px !important;
+    margin-top: var(--control-offset, 200px) !important;
+    transition: margin-top 0.3s ease;
+    z-index: 1100 !important;
   }
-  .map-legend.collapsed + :global(.leaflet-control-layers) {
-    margin-top: 50px !important;
-  }
-  /* Since they aren't siblings in the DOM, we can't use + selector easily, 
-     so we'll just use a safe fixed margin or handle it via a shared state. 
-     For now, 150px is a safe offset for the most common 6-row legend. */
+
   :global(.leaflet-top.leaflet-right) {
     display: flex;
     flex-direction: column;

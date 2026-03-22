@@ -755,8 +755,18 @@
         border: none;
         z-index: 1200; 
         transform: translateY(0);
-        transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), width 0.3s !important;
+        transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), width 0.3s !important, height 0.3s ease !important;
         overflow: visible;
+        display: flex;
+        flex-direction: column;
+      }
+
+      #sidebar.detail-active .tab-content {
+        display: none !important;
+      }
+
+      #sidebar.detail-active .results-container {
+        flex: none;
       }
       
       #sidebar.collapsed {
@@ -798,7 +808,25 @@
         height: 4px;
         background: var(--border);
         border-radius: 2px;
-        transition: background 0.2s;
+      }
+
+      .detail-panel {
+        padding: 12px 16px;
+        overflow-y: auto;
+        flex: 1;
+        min-height: 200px;
+      }
+      
+      .detail-grid {
+        gap: 6px;
+      }
+      
+      .detail-field {
+        padding: 8px 10px;
+      }
+      
+      .detail-name {
+        font-size: 15px;
       }
 
       .sidebar-handle:hover::after {
@@ -826,10 +854,11 @@
 
       #sidebar .detail-panel.visible {
         position: relative;
-        background: var(--bg-secondary);
+        background: var(--bg-card);
         z-index: 10;
-        border-radius: 16px 16px 0 0;
+        border-radius: 0;
         padding-bottom: 24px;
+        border-top: none; /* Hide the extra border on mobile when it's integrated */
       }
       
       .leaflet-control-zoom { margin-top: 10px !important; }

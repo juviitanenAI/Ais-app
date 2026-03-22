@@ -43,7 +43,7 @@
   }
 </script>
 
-<div id="sidebar" class:collapsed={$sidebarCollapsed}>
+<div id="sidebar" class:collapsed={$sidebarCollapsed} class:detail-active={$activeMmsi !== null}>
   <div class="sidebar-header">
     <div class="sidebar-title">
       <span class="icon">⚓</span> AIS Tracker
