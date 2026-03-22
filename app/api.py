@@ -11,7 +11,7 @@ from .config import settings
 from . import db, state
 from .ws_manager import WebSocketManager
 from .mqtt_client import MqttService
-from .snapshot import sampler_task
+from .snapshot import sampler_task, flusher_task
 from .scripts.update_vessel_types import update_vessel_types
 from .db import rebuild_heatmap_cache, rebuild_trends_cache
 from .scripts.update_vessel_types import update_vessel_types
@@ -74,6 +74,9 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         # Start sampler task
         s_task = asyncio.create_task(sampler_task(ws_mgr))
         
+        # Start flusher task
+        f_task = asyncio.create_task(flusher_task())
+        
         # 4. Check if heatmap cache is empty and rebuild if so
         def check_heatmap_and_rebuild():
             try:
@@ -108,6 +111,7 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         yield
         
         s_task.cancel()
+        f_task.cancel()
         up_task.cancel()
 
     app = FastAPI(lifespan=lifespan)

@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { heatmapMode, historyMinutes, filterCategories, vesselTypeCache, vessels, hideOthers, activeMmsi, selectedMmsis } from '../lib/stores.js';
+  import { heatmapMode, heatmapLoading, historyMinutes, filterCategories, vesselTypeCache, vessels, hideOthers, activeMmsi, selectedMmsis } from '../lib/stores.js';
   import { fetchHeatmapData, fetchHistoryData } from '../lib/api.js';
   import { initMap, renderHeatmap, updateMarkerVisibility, renderHistory, clearHistory, fitToVessels } from '../lib/map.js';
   import Legend from './Legend.svelte';
@@ -15,6 +15,7 @@
   $: {
     if ($heatmapMode && map) {
       const hCat = $filterCategories.length === 1 ? $filterCategories[0] : 'all';
+      heatmapLoading.set(true);
       fetchHeatmapData($historyMinutes, hCat).then(pts => {
         let color = null;
         if (hCat !== 'all') {
@@ -25,6 +26,8 @@
       }).catch(e => {
         console.error('Heatmap fetch error', e);
         renderHeatmap([]);
+      }).finally(() => {
+        heatmapLoading.set(false);
       });
     } else {
       clearHistory();

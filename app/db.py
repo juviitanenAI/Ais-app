@@ -15,12 +15,32 @@ def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(settings.DB_PATH, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
     return conn
 
 def get_db() -> sqlite3.Connection:
     if not hasattr(_local, "conn"):
         _local.conn = connect()
     return _local.conn
+
+def with_db_retry(func):
+    """Decorator to retry DB operations if 'database is locked' occurs."""
+    import functools
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        last_err = None
+        for attempt in range(5):
+            try:
+                return func(*args, **kwargs)
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower():
+                    last_err = e
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                raise
+        print(f"[DB] Retry failed after 5 attempts: {last_err}")
+        return None
+    return wrapper
 
 def init_schema() -> None:
     db = get_db()
@@ -89,6 +109,7 @@ def init_schema() -> None:
         """)
 
 
+@with_db_retry
 def upsert_latest(mmsi: str, loc: Optional[dict] = None, meta: Optional[dict] = None) -> None:
     """Päivitä viimeisin rivi yhdellä UPSERTillä."""
     name = meta.get("name") if meta else None
@@ -108,7 +129,10 @@ def upsert_latest(mmsi: str, loc: Optional[dict] = None, meta: Optional[dict] = 
 
     db = get_db()
     with _db_lock, db:
-        db.execute("""
+        _upsert_latest_stmt(db, mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms)
+
+def _upsert_latest_stmt(db, mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms):
+    db.execute("""
         INSERT INTO vessel_latest
             (mmsi, name, call_sign, type, destination, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -125,7 +149,26 @@ def upsert_latest(mmsi: str, loc: Optional[dict] = None, meta: Optional[dict] = 
             heading = COALESCE(excluded.heading, vessel_latest.heading),
             meta_ts_ms = COALESCE(excluded.meta_ts_ms, vessel_latest.meta_ts_ms),
             updated_ms = excluded.updated_ms
-        """, (mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms))
+    """, (mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms))
+
+@with_db_retry
+def upsert_latest_batch(items: List[dict]) -> None:
+    """Päivitä useita aluksia kerralla yhdessä transaktiossa."""
+    if not items:
+        return
+    updated_ms = int(time.time() * 1000)
+    db = get_db()
+    with _db_lock, db:
+        for item in items:
+            mmsi = item["mmsi"]
+            loc = item.get("loc") or {}
+            meta = item.get("meta") or {}
+            _upsert_latest_stmt(
+                db, mmsi, 
+                meta.get("name"), meta.get("callSign"), meta.get("type"), meta.get("destination"),
+                loc.get("lat"), loc.get("lon"), loc.get("time"), loc.get("sog"), loc.get("cog"), loc.get("heading"),
+                meta.get("timestamp"), updated_ms
+            )
 
 def load_latest_into_state() -> None:
     """Lataa viimeisimmät tunnetut sijainnit tietokannasta state.latest-sanakirjaan."""
@@ -161,6 +204,7 @@ def load_latest_into_state() -> None:
                 "last_seen": r[7] or (r[11] // 1000 if r[11] else int(time.time()))
             }
 
+@with_db_retry
 def upsert_vessel_type(code: str, desc_fi: str, desc_en: str, color: str, category: str) -> None:
     db = get_db()
     with _db_lock, db:
@@ -191,6 +235,7 @@ def query_vessel_categories() -> List[Dict[str, str]]:
     """).fetchall()
     return [{"name": r[0], "color": r[1]} for r in rows if r[0]]
 
+@with_db_retry
 def insert_snapshot_rows(rows: List[Tuple[str, int, float, float, Optional[float], Optional[float], Optional[float]]]) -> None:
     if not rows:
         return
@@ -217,6 +262,7 @@ def insert_snapshot_for_mmsis(mmsis: Iterable[str], ts_floor: int) -> None:
             ))
     insert_snapshot_rows(out)
 
+@with_db_retry
 def prune_history(older_than_minutes: int = 24 * 60) -> None:
     cutoff = int(time.time()) - older_than_minutes * 60
     db = get_db()
@@ -226,6 +272,7 @@ def prune_history(older_than_minutes: int = 24 * 60) -> None:
         # (windows referencing data older than cutoff are stale)
         db.execute("DELETE FROM activity_trends_cache WHERE updated_at < ?", (cutoff,))
 
+@with_db_retry
 def prune_vessel_latest(older_than_minutes: int = 24 * 60) -> None:
     """Poista stale-alukset vessel_latest -taulusta (updated_ms perusteella)."""
     cutoff_ms = int((time.time() - older_than_minutes * 60) * 1000)
@@ -354,6 +401,7 @@ def query_history(mmsis: List[str], since_sec: int) -> Dict[str, List[dict]]:
 # init_schema() - Removed top-level call to prevent startup crashes if DB is locked.
 # It is now called explicitly in the FastAPI lifespan.
 
+@with_db_retry
 def rebuild_heatmap_cache() -> None:
     now = int(time.time())
     windows = [720, 1440, 4320, 10080]  # 12h, 24h, 3d, 1w
@@ -441,6 +489,7 @@ def query_stats_activity(minutes_window: int) -> dict:
     return {"timeline": timeline, "categories": categories}
 
 
+@with_db_retry
 def rebuild_trends_cache() -> None:
     """Pre-compute activity trends for all time windows and store as JSON blobs."""
     windows = [720, 1440, 4320, 10080]  # 12h, 24h, 3d, 1w

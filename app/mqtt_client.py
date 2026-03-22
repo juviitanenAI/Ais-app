@@ -52,7 +52,6 @@ class MqttService:
 
                 if kind == "metadata":
                     v["meta"].update(payload)
-                    db.upsert_latest(mmsi, loc=None, meta=payload)
                     # Broadcast meta update
                     vtype_code = str(payload.get("type") or v["meta"].get("type", ""))
                     style = state.vessel_type_cache.get(vtype_code, {})
@@ -76,7 +75,6 @@ class MqttService:
                         return
                     v["loc"] = payload
                     v["last_seen"] = payload.get("time", int(time.time()))
-                    db.upsert_latest(mmsi, loc=payload, meta=None)
 
                     # Lähetä WS:lle vain kiinnostuneille
                     vtype_code = str(v["meta"].get("type", ""))

@@ -9,6 +9,27 @@ from .ws_manager import WebSocketManager
 def floor_to_interval(ts: int, interval: int) -> int:
     return ts - (ts % interval)
 
+def flush_latest_to_db():
+    """Kirjoittaa koko muistissa olevan tilan (state.latest) kerralla tietokantaan."""
+    with state.latest_lock:
+        items = [{"mmsi": mmsi, "loc": v.get("loc"), "meta": v.get("meta")} for mmsi, v in state.latest.items()]
+    
+    if not items:
+        return
+        
+    print(f"[FLUSHER] Persisting {len(items)} vessels to DB batch...")
+    db.upsert_latest_batch(items)
+
+async def flusher_task():
+    """Taustatehtävä joka tallentaa tilan levylle 5 sekunnin välein."""
+    print("[FLUSHER] Background flusher started.")
+    while True:
+        try:
+            await asyncio.sleep(5)
+            await asyncio.to_thread(flush_latest_to_db)
+        except Exception as e:
+            print(f"[FLUSHER] Error: {e}")
+
 async def sampler_task(ws_mgr: WebSocketManager):
     """Aja ikuisesti: ota 15 sek välein näytteet KAIKILLE alueen MMSI:lle."""
     print("[SNAPSHOT] Sampler task started.")
