@@ -205,6 +205,16 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         except Exception as e:
             return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
+    @app.post("/api/stats/activity/rebuild")
+    async def api_rebuild_trends():
+        """Trigger a manual rebuild of the activity trends cache."""
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(None, db.rebuild_trends_cache)
+            return JSONResponse({"status": "success", "message": "Trends cache rebuild complete"})
+        except Exception as e:
+            return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
     # --- API: stats activity (reads from pre-computed cache) ---
     @app.get("/api/stats/activity")
     def api_stats_activity(minutes: int = 1440):

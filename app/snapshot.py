@@ -57,8 +57,8 @@ async def sampler_task(ws_mgr: WebSocketManager):
 
             print(f"[SNAPSHOT] Wrote snapshot and pruned state/db at {ts_floor}")
 
-            # Trigger trends cache rebuild every 15 minutes
-            if ts_floor % (15 * 60) == 0:
+            # Trigger trends cache rebuild every 60 minutes (same cadence as heatmap)
+            if ts_floor % (60 * 60) == 0:
                 print(f"[SNAPSHOT] Triggering timed trends rebuild at {ts_floor}...")
                 asyncio.create_task(asyncio.to_thread(db.rebuild_trends_cache))
 

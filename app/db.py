@@ -9,6 +9,7 @@ from .config import settings
 from . import state
  
 _db_lock = RLock()
+_rebuild_lock = RLock() # Lock to prevent multiple concurrent rebuilds
 _local = threading.local()
 
 def connect() -> sqlite3.Connection:
@@ -29,16 +30,17 @@ def with_db_retry(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         last_err = None
-        for attempt in range(5):
+        for attempt in range(10):
             try:
                 return func(*args, **kwargs)
             except sqlite3.OperationalError as e:
                 if "locked" in str(e).lower():
                     last_err = e
-                    time.sleep(0.5 * (attempt + 1))
+                    backoff = min(1.0 * (attempt + 1), 5.0)
+                    time.sleep(backoff)
                     continue
                 raise
-        print(f"[DB] Retry failed after 5 attempts: {last_err}")
+        print(f"[DB] Retry failed after 10 attempts: {last_err}")
         return None
     return wrapper
 
@@ -401,46 +403,97 @@ def query_history(mmsis: List[str], since_sec: int) -> Dict[str, List[dict]]:
 # init_schema() - Removed top-level call to prevent startup crashes if DB is locked.
 # It is now called explicitly in the FastAPI lifespan.
 
-@with_db_retry
 def rebuild_heatmap_cache() -> None:
-    now = int(time.time())
-    windows = [720, 1440, 4320, 10080]  # 12h, 24h, 3d, 1w
-    db = get_db()
+    """Rebuild heatmap cache using a shadow table approach for safety and atomicity.
     
-    with _db_lock, db:
-        db.execute("DELETE FROM heatmap_cache")
-        
-    for w in windows:
-        print(f"[Heatmap] Building cache for {w}m...", flush=True)
-        cutoff = now - w * 60
-        
-        with _db_lock, db:
-            db.execute("""
-                INSERT OR REPLACE INTO heatmap_cache (time_window, category, lat_grid, lon_grid, weight)
-                SELECT ?,
-                       COALESCE(vt.category, 'Other'),
-                       ROUND(vs.lat, 3),
-                       ROUND(vs.lon, 3),
-                       COUNT(*)
-                FROM vessel_samples vs
-                JOIN vessel_latest vl ON vs.mmsi = vl.mmsi
-                LEFT JOIN vessel_types vt ON vl.type = vt.code
-                WHERE vs.ts >= ?
-                GROUP BY COALESCE(vt.category, 'Other'), ROUND(vs.lat, 3), ROUND(vs.lon, 3)
-            """, (w, cutoff))
+    SELECTs aggregated data into Python memory first, then INSERTs in small
+    batches with commits between them so the DB write-lock is released
+    periodically and snapshot/flusher writes can slip through.
+    """
+    if not _rebuild_lock.acquire(blocking=False):
+        print("[Heatmap] Rebuild already in progress, skipping.")
+        return
+    
+    BATCH_SIZE = 500
 
-            # Aggregate 'all' independent of category
+    try:
+        now = int(time.time())
+        windows = [720, 1440, 4320, 10080]  # 12h, 24h, 3d, 1w
+        
+        # Dedicated connection for the heavy lifting
+        db = connect()
+        try:
+            # 1. Create shadow table
+            db.execute("DROP TABLE IF EXISTS heatmap_cache_new")
             db.execute("""
-                INSERT OR REPLACE INTO heatmap_cache (time_window, category, lat_grid, lon_grid, weight)
-                SELECT ?,
-                       'all',
-                       ROUND(vs.lat, 3),
-                       ROUND(vs.lon, 3),
-                       COUNT(*)
-                FROM vessel_samples vs
-                WHERE vs.ts >= ?
-                GROUP BY ROUND(vs.lat, 3), ROUND(vs.lon, 3)
-            """, (w, cutoff))
+                CREATE TABLE heatmap_cache_new (
+                    time_window INTEGER,
+                    category TEXT,
+                    lat_grid REAL,
+                    lon_grid REAL,
+                    weight INTEGER,
+                    PRIMARY KEY (time_window, category, lat_grid, lon_grid)
+                )
+            """)
+            db.commit()
+
+            for w in windows:
+                print(f"[Heatmap] Building shadow cache for {w}m...", flush=True)
+                cutoff = now - w * 60
+
+                # Step A: SELECT into memory (read-only, no write lock)
+                rows_cat = db.execute("""
+                    SELECT COALESCE(vt.category, 'Other'),
+                           ROUND(vs.lat, 3),
+                           ROUND(vs.lon, 3),
+                           COUNT(*)
+                    FROM vessel_samples vs
+                    JOIN vessel_latest vl ON vs.mmsi = vl.mmsi
+                    LEFT JOIN vessel_types vt ON vl.type = vt.code
+                    WHERE vs.ts >= ?
+                    GROUP BY COALESCE(vt.category, 'Other'), ROUND(vs.lat, 3), ROUND(vs.lon, 3)
+                """, (cutoff,)).fetchall()
+
+                rows_all = db.execute("""
+                    SELECT 'all',
+                           ROUND(vs.lat, 3),
+                           ROUND(vs.lon, 3),
+                           COUNT(*)
+                    FROM vessel_samples vs
+                    WHERE vs.ts >= ?
+                    GROUP BY ROUND(vs.lat, 3), ROUND(vs.lon, 3)
+                """, (cutoff,)).fetchall()
+
+                # Step B: INSERT in batches, committing between to yield the write lock
+                all_rows = [(w, cat, lat, lon, wt) for cat, lat, lon, wt in rows_cat]
+                all_rows += [(w, cat, lat, lon, wt) for cat, lat, lon, wt in rows_all]
+
+                for i in range(0, len(all_rows), BATCH_SIZE):
+                    batch = all_rows[i:i + BATCH_SIZE]
+                    db.executemany("""
+                        INSERT OR REPLACE INTO heatmap_cache_new
+                        (time_window, category, lat_grid, lon_grid, weight)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, batch)
+                    db.commit()
+
+            # 2. Atomic swap
+            with _db_lock: # Hold main lock during the final swap
+                main_db = get_db()
+                main_db.execute("BEGIN TRANSACTION")
+                try:
+                    main_db.execute("DROP TABLE IF EXISTS heatmap_cache")
+                    main_db.execute("ALTER TABLE heatmap_cache_new RENAME TO heatmap_cache")
+                    main_db.commit()
+                    print("[Heatmap] Cache swap complete.", flush=True)
+                except Exception as e:
+                    main_db.rollback()
+                    print(f"[Heatmap] Cache swap failed: {e}", flush=True)
+                    raise
+        finally:
+            db.close()
+    finally:
+        _rebuild_lock.release()
 
 def query_heatmap_cache(minutes: int, category: Optional[str] = None) -> List[List[float]]:
     db = get_db()
@@ -457,13 +510,13 @@ def query_stats_activity(minutes_window: int) -> dict:
     db = get_db()
     cutoff = int(time.time()) - (minutes_window * 60)
     
-    # Query A: Timeline
+    # Query A: Timeline (aggregated to hourly buckets)
     timeline_sql = """
-        SELECT ts, COUNT(DISTINCT mmsi) as count
+        SELECT (ts - ts % 3600) as hour_ts, COUNT(DISTINCT mmsi) as count
         FROM vessel_samples
         WHERE ts >= ?
-        GROUP BY ts
-        ORDER BY ts ASC
+        GROUP BY hour_ts
+        ORDER BY hour_ts ASC
     """
     
     # Read without lock to allow concurrency during heavy MQTT writes
@@ -488,23 +541,56 @@ def query_stats_activity(minutes_window: int) -> dict:
     return {"timeline": timeline, "categories": categories}
 
 
-@with_db_retry
 def rebuild_trends_cache() -> None:
-    """Pre-compute activity trends for all time windows and store as JSON blobs."""
-    windows = [720, 1440, 4320, 10080]  # 12h, 24h, 3d, 1w
-    now = int(time.time())
-    db = get_db()
-    
-    for w in windows:
-        print(f"[Trends] Building cache for {w}m...", flush=True)
-        data = query_stats_activity(w)
-        blob = json.dumps(data, separators=(',', ':'))  # compact JSON
-        with _db_lock, db:
+    """Pre-compute activity trends using a shadow table approach for safety and atomicity."""
+    if not _rebuild_lock.acquire(blocking=False):
+        print("[Trends] Rebuild already in progress, skipping.")
+        return
+
+    try:
+        windows = [720, 1440, 4320, 10080]  # 12h, 24h, 3d, 1w
+        now = int(time.time())
+        db = connect()
+        try:
+            # 1. Create shadow table
+            db.execute("DROP TABLE IF EXISTS activity_trends_cache_new")
             db.execute("""
-                INSERT OR REPLACE INTO activity_trends_cache (time_window, json_blob, updated_at)
-                VALUES (?, ?, ?)
-            """, (w, blob, now))
-    print("[Trends] Cache rebuild complete.", flush=True)
+                CREATE TABLE activity_trends_cache_new (
+                    time_window INTEGER PRIMARY KEY,
+                    json_blob TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL
+                )
+            """)
+            db.commit()
+
+            for w in windows:
+                print(f"[Trends] Building shadow cache for {w}m...", flush=True)
+                data = query_stats_activity(w)
+                blob = json.dumps(data, separators=(',', ':'))
+                db.execute("""
+                    INSERT INTO activity_trends_cache_new (time_window, json_blob, updated_at)
+                    VALUES (?, ?, ?)
+                """, (w, blob, now))
+                db.commit()
+
+            # 2. Atomic swap
+            with _db_lock:
+                main_db = get_db()
+                main_db.execute("BEGIN TRANSACTION")
+                try:
+                    main_db.execute("DROP TABLE IF EXISTS activity_trends_cache")
+                    main_db.execute("ALTER TABLE activity_trends_cache_new RENAME TO activity_trends_cache")
+                    main_db.commit()
+                    print("[Trends] Cache swap complete.", flush=True)
+                except Exception as e:
+                    main_db.rollback()
+                    print(f"[Trends] Cache swap failed: {e}", flush=True)
+                    raise
+        finally:
+            db.close()
+        print("[Trends] Cache rebuild complete.", flush=True)
+    finally:
+        _rebuild_lock.release()
 
 
 def query_trends_cache(minutes: int) -> Optional[dict]:

@@ -59,7 +59,7 @@
       
       const labels = data.timeline.map(d => {
         const date = new Date(d.ts * 1000);
-        return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+        return `${date.getHours().toString().padStart(2, '0')}:00`;
       });
       const values = data.timeline.map(d => d.count);
       

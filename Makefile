@@ -6,9 +6,9 @@ REMOTE_USER ?= dummy
 REMOTE_HOST ?= dummy
 REMOTE_DIR ?= /home/$(REMOTE_USER)/publicwsgi/ais-app
 
-deploy: test build-frontend bump_version sync install
+deploy: test bump_version build-frontend sync install
 	@echo "Triggering remote service restart..."
-	@ssh $(REMOTE_USER)@$(REMOTE_HOST) "pkill -f 'uvicorn main:app' || true"
+	-@ssh $(REMOTE_USER)@$(REMOTE_HOST) "pkill -f 'uvicorn main:app' || true"
 	@echo "Deployment to $(REMOTE_HOST) complete!"
 
 build-frontend:
