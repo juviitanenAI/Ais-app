@@ -167,4 +167,67 @@ def test_prune_vessel_latest():
     mmsis = [r[0] for r in rows]
     
     assert mmsi2 in mmsis
+    assert mmsi2 in mmsis
     assert mmsi1 not in mmsis
+
+def test_query_trends_cache_normalization():
+    from app.db import get_db, query_trends_cache
+    import json
+    
+    conn = get_db()
+    # Insert legacy data with duplicate "other" categories
+    legacy_data = {
+        "timeline": [{"ts": 1000, "count": 10}],
+        "categories": [
+            {"category": "cargo", "color": "#4a9eff", "count": 10},
+            {"category": "other", "color": "#808080", "count": 5},
+            {"category": "Other", "color": "#8899aa", "count": 3}
+        ]
+    }
+    conn.execute(
+        "INSERT INTO activity_trends_cache (time_window, json_blob, updated_at) VALUES (?, ?, ?)",
+        (1440, json.dumps(legacy_data), 1000)
+    )
+    conn.commit()
+    
+    result = query_trends_cache(1440)
+    assert result is not None
+    cats = result["categories"]
+    
+    # "other" and "Other" should be merged
+    other_cat = next(c for c in cats if c["category"] == "Other")
+    assert other_cat["count"] == 8
+    assert other_cat["color"] == "#8899aa"
+    
+    # "cargo" should remain unchanged
+    cargo_cat = next(c for c in cats if c["category"] == "cargo")
+    assert cargo_cat["count"] == 10
+    
+    # Total number of categories should be 2
+    assert len(cats) == 2
+
+def test_query_vessels_case_insensitivity():
+    from app.db import upsert_latest, upsert_vessel_type, query_vessels
+    
+    # 1. Setup vessel types with capitalized category
+    upsert_vessel_type("70", "Cargo", "Cargo", "#4a9eff", "Cargo")
+    upsert_vessel_type("90", "Other", "Other", "#8899aa", "Other")
+    
+    # 2. Insert vessels
+    upsert_latest("111", meta={"name": "CARGO BOAT", "type": 70})
+    upsert_latest("333", meta={"name": "OTHER BOAT", "type": 90})
+    
+    # 3. Query with lowercase category
+    res_cargo = query_vessels(categories=["cargo"])
+    assert len(res_cargo) == 1
+    assert res_cargo[0][0] == "111"
+    
+    # 4. Query with uppercase category
+    res_other = query_vessels(categories=["Other"])
+    assert len(res_other) == 1
+    assert res_other[0][0] == "333"
+    
+    # 5. Query with mixed case category
+    res_other_mixed = query_vessels(categories=["oThEr"])
+    assert len(res_other_mixed) == 1
+    assert res_other_mixed[0][0] == "333"

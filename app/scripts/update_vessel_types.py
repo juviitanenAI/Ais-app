@@ -43,7 +43,7 @@ INITIAL_STYLING = {
   },
   "other": {
     "color": "#8899aa",
-    "category": "other",
+    "category": "Other",
     "codes": ["90", "99"]
   }
 }

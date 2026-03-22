@@ -21,12 +21,15 @@ def flush_latest_to_db():
     db.upsert_latest_batch(items)
 
 async def flusher_task():
-    """Taustatehtävä joka tallentaa tilan levylle 5 sekunnin välein."""
+    """Taustatehtävä joka tallentaa tilan levylle 10 sekunnin välein."""
     print("[FLUSHER] Background flusher started.")
     while True:
         try:
-            await asyncio.sleep(5)
+            await asyncio.sleep(10) # 5s -> 10s suggested
             await asyncio.to_thread(flush_latest_to_db)
+        except asyncio.CancelledError:
+            print("[FLUSHER] Background flusher stopping.")
+            raise
         except Exception as e:
             print(f"[FLUSHER] Error: {e}")
 
@@ -63,6 +66,9 @@ async def sampler_task(ws_mgr: WebSocketManager):
             if ts_floor % (60 * 60) == 0:
                 print(f"[SNAPSHOT] Triggering timed heatmap rebuild at {ts_floor}...")
                 asyncio.create_task(asyncio.to_thread(db.rebuild_heatmap_cache))
+        except asyncio.CancelledError:
+            print("[SNAPSHOT] Sampler task stopping.")
+            raise
         except Exception as e:
             print(f"[SNAPSHOT] Error in sampler_task: {e}")
 

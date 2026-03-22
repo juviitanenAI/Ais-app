@@ -13,8 +13,6 @@ from .ws_manager import WebSocketManager
 from .mqtt_client import MqttService
 from .snapshot import sampler_task, flusher_task
 from .scripts.update_vessel_types import update_vessel_types
-from .db import rebuild_heatmap_cache, rebuild_trends_cache
-from .scripts.update_vessel_types import update_vessel_types
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 
@@ -48,9 +46,6 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
                 print(f"[Lifespan] Vessel type update failed after {time.time() - start_time:.2f}s: {e}")
 
         # 1. Update once on startup
-        loop.run_in_executor(None, update_and_cache)
-        
-        # Update once on startup
         loop.run_in_executor(None, update_and_cache)
         
         # Schedule weekly vessel type update
@@ -168,7 +163,7 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
                 "vtype_info": {
                     "color": style.get("color", "#8899aa"),
                     "label": style.get("desc_en") or style.get("desc_fi") or "Other",
-                    "category": style.get("category", "other")
+                    "category": style.get("category", "Other")
                 },
                 "destination": meta.get("destination", ""),
                 "lat": loc["lat"],

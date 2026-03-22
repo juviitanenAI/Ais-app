@@ -47,7 +47,7 @@
     responsive: true,
     maintainAspectRatio: true,
     plugins: {
-      legend: { position: 'right', labels: { color: '#ccc' } }
+      legend: { position: 'bottom', labels: { color: '#ccc' } }
     }
   };
 
@@ -77,7 +77,7 @@
         ]
       };
 
-      const catLabels = data.categories.map(c => c.category);
+      const catLabels = data.categories.map(c => c.category.charAt(0).toUpperCase() + c.category.slice(1));
       const catValues = data.categories.map(c => c.count);
       const catColors = data.categories.map(c => c.color);
 

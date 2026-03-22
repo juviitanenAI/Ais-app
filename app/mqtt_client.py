@@ -62,7 +62,7 @@ class MqttService:
                         "vtype_info": {
                             "color": style.get("color", "#8899aa"),
                             "label": style.get("desc_en") or style.get("desc_fi") or "Other",
-                            "category": style.get("category", "other")
+                            "category": style.get("category", "Other")
                         }
                     }
                     asyncio.run_coroutine_threadsafe(self.ws_mgr.broadcast_location(mmsi, message), self.loop)
@@ -82,7 +82,7 @@ class MqttService:
                     vtype_info = {
                         "color": style.get("color", "#8899aa"),
                         "label": style.get("desc_en") or style.get("desc_fi") or "Other",
-                        "category": style.get("category", "other")
+                        "category": style.get("category", "Other")
                     }
                     message = {
                         "type": "location", 

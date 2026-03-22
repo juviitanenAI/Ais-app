@@ -303,9 +303,9 @@ def query_vessels(q: Optional[str] = None, categories: Optional[List[str]] = Non
     cat_filter_samples = ""
     if categories:
         placeholders = ",".join("?" for _ in categories)
-        cat_filter_latest = f"AND type IN (SELECT code FROM vessel_types WHERE category IN ({placeholders}))"
-        cat_filter_samples = f"AND mmsi IN (SELECT mmsi FROM vessel_latest WHERE type IN (SELECT code FROM vessel_types WHERE category IN ({placeholders})))"
-        params.extend(categories)
+        cat_filter_latest = f"AND type IN (SELECT code FROM vessel_types WHERE LOWER(category) IN ({placeholders}))"
+        cat_filter_samples = f"AND mmsi IN (SELECT mmsi FROM vessel_latest WHERE type IN (SELECT code FROM vessel_types WHERE LOWER(category) IN ({placeholders})))"
+        params.extend([c.lower() for c in categories])
 
     if q:
         like = f"%{q}%"
@@ -415,11 +415,10 @@ def rebuild_heatmap_cache() -> None:
         cutoff = now - w * 60
         
         with _db_lock, db:
-            # Aggregate per category
             db.execute("""
                 INSERT OR REPLACE INTO heatmap_cache (time_window, category, lat_grid, lon_grid, weight)
                 SELECT ?,
-                       COALESCE(vt.category, 'other'),
+                       COALESCE(vt.category, 'Other'),
                        ROUND(vs.lat, 3),
                        ROUND(vs.lon, 3),
                        COUNT(*)
@@ -427,7 +426,7 @@ def rebuild_heatmap_cache() -> None:
                 JOIN vessel_latest vl ON vs.mmsi = vl.mmsi
                 LEFT JOIN vessel_types vt ON vl.type = vt.code
                 WHERE vs.ts >= ?
-                GROUP BY COALESCE(vt.category, 'other'), ROUND(vs.lat, 3), ROUND(vs.lon, 3)
+                GROUP BY COALESCE(vt.category, 'Other'), ROUND(vs.lat, 3), ROUND(vs.lon, 3)
             """, (w, cutoff))
 
             # Aggregate 'all' independent of category
@@ -474,7 +473,7 @@ def query_stats_activity(minutes_window: int) -> dict:
     # Query B: Categories
     cat_sql = """
         SELECT COALESCE(vt.category, 'Other') as category_name,
-               COALESCE(vt.color, '#808080') as color,
+               COALESCE(vt.color, '#8899aa') as color,
                COUNT(DISTINCT vs.mmsi) as count
         FROM vessel_samples vs
         JOIN vessel_latest vl ON vs.mmsi = vl.mmsi
@@ -516,5 +515,20 @@ def query_trends_cache(minutes: int) -> Optional[dict]:
         (minutes,)
     ).fetchone()
     if row:
-        return json.loads(row[0])
+        data = json.loads(row[0])
+        # Normalize and merge "other" categories on-the-fly to handle legacy cached data
+        if "categories" in data:
+            merged = {}
+            for c in data["categories"]:
+                name = "Other" if c["category"].lower() == "other" else c["category"]
+                if name in merged:
+                    merged[name]["count"] += c["count"]
+                else:
+                    merged[name] = c
+                    merged[name]["category"] = name
+                    # Ensure color is standardized for "Other"
+                    if name == "Other":
+                        merged[name]["color"] = "#8899aa"
+            data["categories"] = list(merged.values())
+        return data
     return None
