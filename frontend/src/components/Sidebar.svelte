@@ -1,5 +1,5 @@
 <script>
-  import { sidebarCollapsed, vessels, wsConnected, heatmapMode, toggleHeatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels, activeTab, heatmapLoading } from '../lib/stores.js';
+  import { sidebarCollapsed, sidebarExpandedAt, vessels, wsConnected, heatmapMode, toggleHeatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels, activeTab, heatmapLoading } from '../lib/stores.js';
   import { fade } from 'svelte/transition';
   import { APP_VERSION, MOBILE_VERSION } from '../lib/config.js';
   import { fetchVesselCategories, fetchSearchResults } from '../lib/api.js';
@@ -33,7 +33,13 @@
 
   function toggleSidebar(e) {
     if (e) e.stopPropagation();
-    sidebarCollapsed.update(v => !v);
+    sidebarCollapsed.update(v => {
+      if (v) {
+        // Expanding: record timestamp to guard against ghost clicks
+        sidebarExpandedAt.set(Date.now());
+      }
+      return !v;
+    });
   }
 </script>
 
@@ -102,7 +108,7 @@
   <DetailPanel />
   <StatsOverlay />
 
-  <button class="sidebar-handle" onpointerdown={toggleSidebar} aria-label="Toggle sidebar"></button>
+  <button class="sidebar-handle" onclick={toggleSidebar} aria-label="Toggle sidebar"></button>
 </div>
 
 <style>

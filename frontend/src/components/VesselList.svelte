@@ -1,6 +1,6 @@
 <script>
   import { get } from 'svelte/store';
-  import { vessels, activeMmsi, selectedMmsis, heatmapMode, filteredVessels } from '../lib/stores.js';
+  import { vessels, activeMmsi, selectedMmsis, heatmapMode, filteredVessels, sidebarExpandedAt } from '../lib/stores.js';
   import { filterVessels, compareVessels, vesselTypeInfo } from '../lib/utils.js';
 
   export let searchTerm = '';
@@ -26,6 +26,8 @@
 
   function selectShip(mmsi) {
     if ($heatmapMode) return;
+    // Guard against ghost clicks right after expanding sidebar on mobile
+    if (Date.now() - $sidebarExpandedAt < 400) return;
     if ($activeMmsi === mmsi) {
       activeMmsi.set(null);
     } else {
