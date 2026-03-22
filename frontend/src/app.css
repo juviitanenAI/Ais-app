@@ -755,7 +755,7 @@
         border: none;
         z-index: 1200; 
         transform: translateY(0);
-        transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), width 0.3s !important, height 0.3s ease !important;
+        transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), width 0.3s, height 0.3s ease !important;
         overflow: visible;
         display: flex;
         flex-direction: column;

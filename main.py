@@ -50,6 +50,8 @@ def build_app_and_services():
     return app
 
 
+import atexit
+atexit.register(db.shutdown)
 app = build_app_and_services()
 
 if __name__ == "__main__":

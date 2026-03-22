@@ -108,6 +108,9 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         s_task.cancel()
         f_task.cancel()
         up_task.cancel()
+        
+        # Ensure DB is cleanly closed on lifespan end (shutdown)
+        db.shutdown()
 
     app = FastAPI(lifespan=lifespan)
 
@@ -240,5 +243,16 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
             pass
         finally:
             ws_mgr.unregister(ws)
+
+    @app.post("/api/admin/shutdown")
+    async def admin_shutdown():
+        """Administrative shutdown endpoint. Requires some form of auth/protection in production."""
+        # For now, we trust internal network or basic env-check
+        import os
+        import signal
+        print("[Admin] Shutdown requested via API.")
+        # Trigger graceful exit of the parent process (uvicorn)
+        os.kill(os.getpid(), signal.SIGINT)
+        return JSONResponse({"status": "shutdown_initiated"})
 
     return app

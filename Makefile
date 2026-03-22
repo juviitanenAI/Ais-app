@@ -1,14 +1,23 @@
 .PHONY: deploy sync install test dev bump_version calculate-views build-frontend fetch-db
 
--include .env
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+    $(info .env file found and loaded.)
+else
+    $(info Warning: .env file not found. Using default or environment variables.)
+endif
 
 REMOTE_USER ?= dummy
 REMOTE_HOST ?= dummy
 REMOTE_DIR ?= /home/$(REMOTE_USER)/publicwsgi/ais-app
 
-deploy: test bump_version build-frontend sync install
-	@echo "Triggering remote service restart..."
-	-@ssh $(REMOTE_USER)@$(REMOTE_HOST) "pkill -f 'uvicorn main:app' || true"
+deploy: test
+	@python3 scripts/bump_version.py
+	@$(MAKE) build-frontend
+	@$(MAKE) sync
+	@echo "Triggering graceful remote shutdown..."
+	-@ssh $(REMOTE_USER)@$(REMOTE_HOST) "curl -f -X POST http://localhost:$(APP_PORT)/api/admin/shutdown || pkill -f 'uvicorn main:app'"
 	@echo "Deployment to $(REMOTE_HOST) complete!"
 
 build-frontend:
@@ -21,7 +30,7 @@ calculate-views:
 bump_version:
 	@python3 scripts/bump_version.py
 
-test:
+test: build-frontend
 	@echo "Running Python backend tests..."
 	@if [ -f venv/bin/pytest ]; then \
 		venv/bin/pytest tests/ ; \
@@ -43,7 +52,16 @@ sync:
 fetch-db:
 	@echo "Fetching remote database..."
 	@mkdir -p remote_db
-	scp $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/vessels.sqlite remote_db/
+	ssh $(REMOTE_USER)@$(REMOTE_HOST) "cd $(REMOTE_DIR) && .venv/bin/python -c 'from app import db; db.shutdown()'"
+	scp $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/vessels.sqlite* remote_db/
+
+push-db:
+	@echo "Pushing local database to remote..."
+	-@ssh $(REMOTE_USER)@$(REMOTE_HOST) "curl -f -X POST http://localhost:$(APP_PORT)/api/admin/shutdown || pkill -f 'uvicorn main:app'"
+	@sleep 2
+	ssh $(REMOTE_USER)@$(REMOTE_HOST) "rm -f $(REMOTE_DIR)/vessels.sqlite $(REMOTE_DIR)/vessels.sqlite-wal $(REMOTE_DIR)/vessels.sqlite-shm"
+	scp vessels.sqlite* $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/
+	@echo "Database push complete."
 
 install:
 	ssh $(REMOTE_USER)@$(REMOTE_HOST) "cd $(REMOTE_DIR) && ( [ -f '.venv/bin/pip' ] || rm -rf .venv ) && [ ! -d '.venv' ] && virtualenv -p python3 --system-site-packages .venv || true && .venv/bin/pip install -r requirements.txt"

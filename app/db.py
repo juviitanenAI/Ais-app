@@ -15,7 +15,10 @@ _local = threading.local()
 def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(settings.DB_PATH, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
+    # Changed from NORMAL to FULL for better crash safety (fsync on WAL frames)
+    conn.execute("PRAGMA synchronous=FULL;")
+    # Ensure WAL doesn't grow indefinitely
+    conn.execute("PRAGMA wal_autocheckpoint=1000;")
     conn.execute("PRAGMA busy_timeout=5000;")
     return conn
 
@@ -47,6 +50,14 @@ def with_db_retry(func):
 def init_schema() -> None:
     db = get_db()
     with _db_lock, db:
+        # Quick integrity verify on startup
+        try:
+            res = db.execute("PRAGMA integrity_check(100);").fetchone()
+            if res and res[0] != "ok":
+                print(f"[DB] WARNING: Integrity check failed: {res[0]}")
+        except Exception as e:
+            print(f"[DB] Integrity check error: {e}")
+
         db.execute("""
         CREATE TABLE IF NOT EXISTS vessel_latest (
             mmsi TEXT PRIMARY KEY,
@@ -398,6 +409,24 @@ def query_history(mmsis: List[str], since_sec: int) -> Dict[str, List[dict]]:
     for m, ts, lat, lon, sog, cog, hdg in rows:
         out[m].append({"ts": ts, "lat": lat, "lon": lon, "sog": sog, "cog": cog, "heading": hdg})
     return out
+
+def shutdown() -> None:
+    """Graceful shutdown: checkpoint WAL and close all connections."""
+    print("[DB] Graceful shutdown initiated...")
+    db = get_db()
+    try:
+        with _db_lock:
+            # TRUNCATE ensures WAL file is zeroed out and content moved to main DB
+            print("[DB] Checkpointing WAL...")
+            db.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            print("[DB] WAL checkpoint complete.")
+    except Exception as e:
+        print(f"[DB] Shutdown checkpoint failed: {e}")
+    finally:
+        if hasattr(_local, "conn"):
+            _local.conn.close()
+            del _local.conn
+            print("[DB] Local connection closed.")
 
 # Alusta skeema moduulin latauksen yhteydessä
 # init_schema() - Removed top-level call to prevent startup crashes if DB is locked.
