@@ -1,5 +1,6 @@
 <script>
-  import { sidebarCollapsed, vessels, wsConnected, heatmapMode, toggleHeatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels } from '../lib/stores.js';
+  import { sidebarCollapsed, vessels, wsConnected, heatmapMode, toggleHeatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels, activeTab } from '../lib/stores.js';
+  import { fade } from 'svelte/transition';
   import { APP_VERSION, MOBILE_VERSION } from '../lib/config.js';
   import { fetchVesselCategories, fetchSearchResults } from '../lib/api.js';
   import { onMount } from 'svelte';
@@ -7,6 +8,7 @@
   import ResultTabs from './ResultTabs.svelte';
   import DetailPanel from './DetailPanel.svelte';
   import HistoryToggle from './HistoryToggle.svelte';
+  import StatsOverlay from './StatsOverlay.svelte';
 
   let searchTerm = '';
   let categories = [];
@@ -52,23 +54,28 @@
       ⚓&nbsp;&nbsp; AIS Tracker&nbsp;&nbsp;v<span class="app-version">{MOBILE_VERSION}</span>
     </div>
     <div class="stat right-stat">
-      {#if $heatmapMode}
-        <button id="heatmap-toggle" class="heatmap-btn active" onclick={() => toggleHeatmapMode(false)}>🔥 Heatmap</button>
-      {:else}
-        <button id="live-toggle" class="heatmap-btn" onclick={() => toggleHeatmapMode(true)}>Live ●</button>
-      {/if}
+      <div class="conn-status" class:connected={$wsConnected}>
+        <span class="status-dot"></span>
+        {$wsConnected ? 'Live' : 'Offline'}
+      </div>
     </div>
   </div>
 
-  <div class="search-filter-area">
-    <div class="search-box">
-      <input type="text" id="search" placeholder="Search vessel name or MMSI…" autocomplete="off" bind:value={searchTerm}/>
+  {#if $activeTab === 'vessels' || $activeTab === 'heatmap'}
+    <div class="search-filter-area" transition:fade={{duration: 150}}>
+      {#if $activeTab === 'vessels'}
+        <div class="search-box">
+          <input type="text" id="search" placeholder="Search vessel name or MMSI…" autocomplete="off" bind:value={searchTerm}/>
+        </div>
+      {/if}
+      <div class="filter-box">
+        <MultiSelect {categories} />
+      </div>
+      {#if $activeTab === 'heatmap' || ($activeTab === 'vessels' && ($selectedMmsis.size > 0 || $activeMmsi))}
+        <HistoryToggle />
+      {/if}
     </div>
-    <div class="filter-box">
-      <MultiSelect {categories} />
-    </div>
-    <HistoryToggle />
-  </div>
+  {/if}
 
   {#if $selectedMmsis.size > 0 || $activeMmsi}
     <div class="vessel-list-header">
@@ -87,6 +94,7 @@
 
   <ResultTabs {searchTerm} />
   <DetailPanel />
+  <StatsOverlay />
 
   <button class="sidebar-handle" onpointerdown={toggleSidebar} aria-label="Toggle sidebar"></button>
 </div>

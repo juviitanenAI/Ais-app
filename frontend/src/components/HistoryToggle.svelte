@@ -15,7 +15,9 @@
     { label: '1 wk', value: 10080 }
   ];
 
-  $: options = $heatmapMode ? heatmapOptions : normalOptions;
+  export let forceHeatmapOptions = false;
+
+  $: options = (forceHeatmapOptions || $heatmapMode) ? heatmapOptions : normalOptions;
 
   function setHistory(min) {
     historyMinutes.set(min);

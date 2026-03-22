@@ -212,3 +212,7 @@ __marimo__/
 # Node
 node_modules/
 package-lock.json
+
+*.sqlite
+*.sqlite-shm
+vessels.sqlite

@@ -138,3 +138,33 @@ def test_query_vessels_with_category():
     # 5. Query both (no category)
     res_all = query_vessels()
     assert len(res_all) == 2
+
+def test_prune_vessel_latest():
+    from app.db import upsert_latest, prune_vessel_latest, get_db
+    import time
+    
+    # Needs to be careful with updated_ms which is set inside upsert_latest
+    # We can't easily inject time.time() inside db.py without more mocking,
+    # but we can wait or mock time.time in db module if needed.
+    # However, upsert_latest uses time.time() * 1000.
+    
+    mmsi1 = "OLD_LATEST"
+    mmsi2 = "NEW_LATEST"
+    
+    # We can't easily insert "old" updated_ms via upsert_latest because it uses time.time().
+    # Let's insert manually for testing pruning logic.
+    conn = get_db()
+    now_ms = int(time.time() * 1000)
+    old_ms = now_ms - (25 * 3600 * 1000)
+    
+    conn.execute("INSERT INTO vessel_latest (mmsi, updated_ms) VALUES (?, ?)", (mmsi1, old_ms))
+    conn.execute("INSERT INTO vessel_latest (mmsi, updated_ms) VALUES (?, ?)", (mmsi2, now_ms))
+    conn.commit()
+    
+    prune_vessel_latest(older_than_minutes=24 * 60)
+    
+    rows = conn.execute("SELECT mmsi FROM vessel_latest").fetchall()
+    mmsis = [r[0] for r in rows]
+    
+    assert mmsi2 in mmsis
+    assert mmsi1 not in mmsis

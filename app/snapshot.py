@@ -22,7 +22,26 @@ async def sampler_task(ws_mgr: WebSocketManager):
             ts_floor = floor_to_interval(int(time.time()), settings.SNAPSHOT_INTERVAL_SEC)
             db.insert_snapshot_for_all(ts_floor)
             db.prune_history(older_than_minutes=settings.SNAPSHOT_RETENTION_MINUTES)
-            print(f"[SNAPSHOT] Wrote snapshot at {ts_floor}")
+            db.prune_vessel_latest(older_than_minutes=settings.SNAPSHOT_RETENTION_MINUTES)
+
+            # Prune in-memory state.latest
+            with state.latest_lock:
+                cutoff_ts = int(time.time()) - settings.SNAPSHOT_RETENTION_MINUTES * 60
+                stale_mmsis = [mmsi for mmsi, v in state.latest.items() if v.get("last_seen", 0) < cutoff_ts]
+                for mmsi in stale_mmsis:
+                    del state.latest[mmsi]
+
+            print(f"[SNAPSHOT] Wrote snapshot and pruned state/db at {ts_floor}")
+
+            # Trigger trends cache rebuild every 15 minutes
+            if ts_floor % (15 * 60) == 0:
+                print(f"[SNAPSHOT] Triggering timed trends rebuild at {ts_floor}...")
+                asyncio.create_task(asyncio.to_thread(db.rebuild_trends_cache))
+
+            # Trigger heatmap rebuild every 60 minutes (on the hour)
+            if ts_floor % (60 * 60) == 0:
+                print(f"[SNAPSHOT] Triggering timed heatmap rebuild at {ts_floor}...")
+                asyncio.create_task(asyncio.to_thread(db.rebuild_heatmap_cache))
         except Exception as e:
             print(f"[SNAPSHOT] Error in sampler_task: {e}")
 

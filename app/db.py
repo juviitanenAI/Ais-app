@@ -1,4 +1,5 @@
 # app/db.py
+import json
 import sqlite3
 import time
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -76,6 +77,14 @@ def init_schema() -> None:
             lon_grid REAL,
             weight INTEGER,
             PRIMARY KEY (time_window, category, lat_grid, lon_grid)
+        );
+        """)
+
+        db.execute("""
+        CREATE TABLE IF NOT EXISTS activity_trends_cache (
+            time_window INTEGER PRIMARY KEY,
+            json_blob TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
         );
         """)
 
@@ -213,6 +222,16 @@ def prune_history(older_than_minutes: int = 24 * 60) -> None:
     db = get_db()
     with _db_lock, db:
         db.execute("DELETE FROM vessel_samples WHERE ts < ?", (cutoff,))
+        # Prune trends cache rows whose window is entirely outside retention
+        # (windows referencing data older than cutoff are stale)
+        db.execute("DELETE FROM activity_trends_cache WHERE updated_at < ?", (cutoff,))
+
+def prune_vessel_latest(older_than_minutes: int = 24 * 60) -> None:
+    """Poista stale-alukset vessel_latest -taulusta (updated_ms perusteella)."""
+    cutoff_ms = int((time.time() - older_than_minutes * 60) * 1000)
+    db = get_db()
+    with _db_lock, db:
+        db.execute("DELETE FROM vessel_latest WHERE updated_ms < ?", (cutoff_ms,))
 
 def insert_snapshot_for_all(ts_floor: int) -> None:
     """Kerää state.latestistä rivit kaikista MMSI:stä ja kirjoita 15 min näyte."""
@@ -337,7 +356,7 @@ def query_history(mmsis: List[str], since_sec: int) -> Dict[str, List[dict]]:
 
 def rebuild_heatmap_cache() -> None:
     now = int(time.time())
-    windows = [60, 180, 720, 1440]
+    windows = [720, 1440, 4320, 10080]  # 12h, 24h, 3d, 1w
     db = get_db()
     
     with _db_lock, db:
@@ -385,3 +404,68 @@ def query_heatmap_cache(minutes: int, category: Optional[str] = None) -> List[Li
     
     # Leaflet heat plugin format: [lat, lon, intensity]
     return [[r[0], r[1], float(r[2])] for r in rows]
+
+def query_stats_activity(minutes_window: int) -> dict:
+    """Live computation of activity stats — used as fallback and by the cache builder."""
+    db = get_db()
+    cutoff = int(time.time()) - (minutes_window * 60)
+    
+    # Query A: Timeline
+    timeline_sql = """
+        SELECT ts, COUNT(DISTINCT mmsi) as count
+        FROM vessel_samples
+        WHERE ts >= ?
+        GROUP BY ts
+        ORDER BY ts ASC
+    """
+    
+    # Read without lock to allow concurrency during heavy MQTT writes
+    tl_rows = db.execute(timeline_sql, (cutoff,)).fetchall()
+    timeline = [{"ts": r[0], "count": r[1]} for r in tl_rows]
+    
+    # Query B: Categories
+    cat_sql = """
+        SELECT COALESCE(vt.category, 'Other') as category_name,
+               COALESCE(vt.color, '#808080') as color,
+               COUNT(DISTINCT vs.mmsi) as count
+        FROM vessel_samples vs
+        JOIN vessel_latest vl ON vs.mmsi = vl.mmsi
+        LEFT JOIN vessel_types vt ON vl.type = vt.code
+        WHERE vs.ts >= ?
+        GROUP BY category_name, color
+        ORDER BY count DESC
+    """
+    cat_rows = db.execute(cat_sql, (cutoff,)).fetchall()
+    categories = [{"category": r[0], "color": r[1], "count": r[2]} for r in cat_rows]
+    
+    return {"timeline": timeline, "categories": categories}
+
+
+def rebuild_trends_cache() -> None:
+    """Pre-compute activity trends for all time windows and store as JSON blobs."""
+    windows = [720, 1440, 4320, 10080]  # 12h, 24h, 3d, 1w
+    now = int(time.time())
+    db = get_db()
+    
+    for w in windows:
+        print(f"[Trends] Building cache for {w}m...", flush=True)
+        data = query_stats_activity(w)
+        blob = json.dumps(data, separators=(',', ':'))  # compact JSON
+        with _db_lock, db:
+            db.execute("""
+                INSERT OR REPLACE INTO activity_trends_cache (time_window, json_blob, updated_at)
+                VALUES (?, ?, ?)
+            """, (w, blob, now))
+    print("[Trends] Cache rebuild complete.", flush=True)
+
+
+def query_trends_cache(minutes: int) -> Optional[dict]:
+    """Read pre-computed trends from cache. Returns None if cache miss."""
+    db = get_db()
+    row = db.execute(
+        "SELECT json_blob FROM activity_trends_cache WHERE time_window = ?",
+        (minutes,)
+    ).fetchone()
+    if row:
+        return json.loads(row[0])
+    return None

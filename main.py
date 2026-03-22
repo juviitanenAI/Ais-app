@@ -20,13 +20,15 @@ def build_app_and_services():
     ws_mgr = WSManager()
 
     if "--calculate-views" in sys.argv:
-        print("[Startup] --calculate-views flag detected. Building heatmap cache...")
+        print("[Startup] --calculate-views flag detected. Building heatmap & trends cache...")
         try:
             db.init_schema() # ensure schema is ready before building cache
             db.rebuild_heatmap_cache()
             print("[Startup] Heatmap cache built.")
+            db.rebuild_trends_cache()
+            print("[Startup] Trends cache built.")
         except Exception as e:
-            print(f"[Startup] Failed to build heatmap cache: {e}")
+            print(f"[Startup] Failed to build cache: {e}")
 
     # Create FastAPI app (routes: /, /api/vessels, /api/history, /ws)
     app = create_app(ws_mgr)

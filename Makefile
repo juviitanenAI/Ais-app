@@ -1,4 +1,4 @@
-.PHONY: deploy sync install test dev bump_version calculate-views build-frontend
+.PHONY: deploy sync install test dev bump_version calculate-views build-frontend fetch-db
 
 -include .env
 
@@ -7,9 +7,7 @@ REMOTE_HOST ?= dummy
 REMOTE_DIR ?= /home/$(REMOTE_USER)/publicwsgi/ais-app
 
 deploy: test build-frontend bump_version sync install
-ifdef CALC
-	$(MAKE) calculate-views
-endif
+	@echo "Triggering remote service restart..."
 	@ssh $(REMOTE_USER)@$(REMOTE_HOST) "pkill -f 'uvicorn main:app' || true"
 	@echo "Deployment to $(REMOTE_HOST) complete!"
 
@@ -41,6 +39,11 @@ dev:
 
 sync:
 	rsync -avz --exclude='.venv' --exclude='__pycache__' --exclude='.git' --exclude='*.sqlite*' --exclude='frontend/node_modules' ./ $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/
+
+fetch-db:
+	@echo "Fetching remote database..."
+	@mkdir -p remote_db
+	scp $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/vessels.sqlite remote_db/
 
 install:
 	ssh $(REMOTE_USER)@$(REMOTE_HOST) "cd $(REMOTE_DIR) && ( [ -f '.venv/bin/pip' ] || rm -rf .venv ) && [ ! -d '.venv' ] && virtualenv -p python3 --system-site-packages .venv || true && .venv/bin/pip install -r requirements.txt"

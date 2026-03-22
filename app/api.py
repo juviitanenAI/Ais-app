@@ -13,7 +13,7 @@ from .ws_manager import WebSocketManager
 from .mqtt_client import MqttService
 from .snapshot import sampler_task
 from .scripts.update_vessel_types import update_vessel_types
-from .db import rebuild_heatmap_cache
+from .db import rebuild_heatmap_cache, rebuild_trends_cache
 from .scripts.update_vessel_types import update_vessel_types
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
@@ -50,24 +50,16 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         # 1. Update once on startup
         loop.run_in_executor(None, update_and_cache)
         
-        # 2. Schedule weekly
+        # Update once on startup
+        loop.run_in_executor(None, update_and_cache)
+        
+        # Schedule weekly vessel type update
         async def weekly_updater():
             while True:
-                await asyncio.sleep(7 * 24 * 3600)  # Wait 1 week
+                await asyncio.sleep(7 * 24 * 3600)
                 loop.run_in_executor(None, update_and_cache)
         
         up_task = asyncio.create_task(weekly_updater())
-
-        # 3. Schedule hourly heatmap cache rebuild
-        async def hourly_heatmap_updater():
-            while True:
-                await asyncio.sleep(60 * 60)  # Wait 1 hour
-                try:
-                    loop.run_in_executor(None, rebuild_heatmap_cache)
-                except Exception as e:
-                    print(f"[Lifespan] Heatmap cache rebuild failed: {e}")
-        
-        heat_task = asyncio.create_task(hourly_heatmap_updater())
 
         # Initial cache load
         try:
@@ -82,11 +74,41 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         # Start sampler task
         s_task = asyncio.create_task(sampler_task(ws_mgr))
         
+        # 4. Check if heatmap cache is empty and rebuild if so
+        def check_heatmap_and_rebuild():
+            try:
+                # Check 24h window as a representative sample
+                data = db.query_heatmap_cache(1440)
+                if not data:
+                    print("[Heatmap] Cache appears empty on startup. Triggering automatic background rebuild...")
+                    db.rebuild_heatmap_cache()
+                    print("[Heatmap] Initial automatic rebuild complete.")
+                else:
+                    print(f"[Heatmap] Cache check: {len(data)} entries found for 24h window. Skipping startup rebuild.")
+            except Exception as e:
+                print(f"[Heatmap] Automatic startup check/rebuild failed: {e}")
+
+        loop.run_in_executor(None, check_heatmap_and_rebuild)
+
+        # 5. Check if trends cache is empty and rebuild if so
+        def check_trends_and_rebuild():
+            try:
+                data = db.query_trends_cache(1440)
+                if not data:
+                    print("[Trends] Cache appears empty on startup. Triggering automatic background rebuild...")
+                    db.rebuild_trends_cache()
+                    print("[Trends] Initial automatic rebuild complete.")
+                else:
+                    print(f"[Trends] Cache check: data found for 24h window. Skipping startup rebuild.")
+            except Exception as e:
+                print(f"[Trends] Automatic startup check/rebuild failed: {e}")
+
+        loop.run_in_executor(None, check_trends_and_rebuild)
+
         yield
         
         s_task.cancel()
         up_task.cancel()
-        heat_task.cancel()
 
     app = FastAPI(lifespan=lifespan)
 
@@ -166,10 +188,35 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
 
     # --- API: route heatmap cache ---
     @app.get("/api/heatmap")
-    def api_heatmap(minutes: int = 180, category: Optional[str] = None):
-        if minutes not in [60, 180, 720, 1440]:
-            minutes = 180
+    def api_heatmap(minutes: int = 1440, category: Optional[str] = None):
+        # Allow windows: 12h (720), 24h (1440), 3d (4320), 1w (10080)
+        if minutes not in [720, 1440, 4320, 10080]:
+            minutes = 1440
         data = db.query_heatmap_cache(minutes, category)
+        return JSONResponse(data)
+
+    @app.post("/api/heatmap/rebuild")
+    async def api_rebuild_heatmap():
+        """Trigger a manual rebuild of the heatmap cache."""
+        loop = asyncio.get_running_loop()
+        try:
+            # Run in executor to avoid blocking the event loop
+            await loop.run_in_executor(None, db.rebuild_heatmap_cache)
+            return JSONResponse({"status": "success", "message": "Heatmap cache rebuild complete"})
+        except Exception as e:
+            return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+    # --- API: stats activity (reads from pre-computed cache) ---
+    @app.get("/api/stats/activity")
+    def api_stats_activity(minutes: int = 1440):
+        if minutes <= 0:
+            minutes = 1440
+        # Try cache first (instant)
+        cached = db.query_trends_cache(minutes)
+        if cached is not None:
+            return JSONResponse(cached)
+        # Fallback to live computation if cache miss
+        data = db.query_stats_activity(minutes)
         return JSONResponse(data)
 
     # --- WebSocket: live vessel updates ---

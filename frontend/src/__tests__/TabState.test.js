@@ -9,10 +9,10 @@ describe('Tab and Heatmap State Management', () => {
     activeTab.set('vessels');
   });
 
-  it('activating heatmap mode automatically switches to stats tab', () => {
+  it('activating heatmap mode automatically switches to heatmap tab', () => {
     toggleHeatmapMode(true);
     expect(get(heatmapMode)).toBe(true);
-    expect(get(activeTab)).toBe('stats');
+    expect(get(activeTab)).toBe('heatmap');
   });
 
   it('deactivating heatmap mode switches back to vessels tab', () => {
@@ -30,7 +30,9 @@ describe('Tab and Heatmap State Management', () => {
     expect(get(heatmapMode)).toBe(false);
   });
 
-  it('switching to stats tab does not automatically enable heatmap mode', () => {
+  it('switching to stats tab automatically disables heatmap mode', () => {
+    toggleHeatmapMode(true); // first enable heatmap
+    
     switchSecondaryTab('stats');
     expect(get(activeTab)).toBe('stats');
     expect(get(heatmapMode)).toBe(false);
