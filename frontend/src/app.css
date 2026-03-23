@@ -25,12 +25,14 @@
       color: var(--text-primary);
       overflow: hidden;
       height: 100vh;
+      height: 100dvh;
     }
 
     /* ---- Layout ---- */
     #app {
       display: flex;
       height: 100vh;
+      height: 100dvh;
     }
 
     #sidebar {
@@ -83,6 +85,7 @@
     #map {
       flex: 1;
       height: 100vh;
+      height: 100dvh;
     }
 
     /* ---- Sidebar header ---- */
@@ -752,6 +755,7 @@
         left: 0; 
         width: 100vw;
         height: 45vh; 
+        height: 45dvh; 
         border: none;
         z-index: 1200; 
         transform: translateY(0);
@@ -857,7 +861,7 @@
         background: var(--bg-card);
         z-index: 10;
         border-radius: 0;
-        padding-bottom: 24px;
+        padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
         border-top: none; /* Hide the extra border on mobile when it's integrated */
       }
       
