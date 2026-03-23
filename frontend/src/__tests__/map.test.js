@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { vessels, activeMmsi } from '../lib/stores.js';
+import { vessels, activeMmsi, autoFollow } from '../lib/stores.js';
+import { get } from 'svelte/store';
 import * as mapLib from '../lib/map.js';
 
 // Minimal Leaflet mock
@@ -30,7 +31,9 @@ global.L = {
     removeLayer: vi.fn().mockReturnThis(),
     addLayer: vi.fn().mockReturnThis(),
     hasLayer: vi.fn().mockReturnValue(true),
-    on: vi.fn().mockReturnThis()
+    on: vi.fn().mockReturnThis(),
+    getZoom: vi.fn().mockReturnValue(18),
+    getCenter: vi.fn().mockReturnValue({ lat: 60, lng: 24 })
   })),
   tileLayer: vi.fn(() => ({
     addTo: vi.fn().mockReturnThis()
@@ -49,6 +52,7 @@ describe('Map Logic', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vessels.set({});
+    autoFollow.set(true); // Default to true for existing tests
     mapLib.clearHistory();
     // Re-init map for testing
     const el = document.createElement('div');
@@ -78,6 +82,7 @@ describe('Map Logic', () => {
       getLatLngs: () => [[60.0, 24.8], [59.9, 24.7]]
     };
     mapLib.historyLayers.set(123, { polyline: mockPolyline });
+    autoFollow.set(false); // history is only included when autoFollow is false
 
     mapLib.fitToVessels([123]);
 
@@ -116,5 +121,17 @@ describe('Map Logic', () => {
     // Let's check.
     
     expect(mapLib.map.fitBounds).toHaveBeenCalled();
+  });
+
+  it('does NOT reset autoFollow on map drag or zoom (removed feature)', () => {
+    autoFollow.set(true);
+    
+    // Check that dragstart is NOT registered
+    const dragHandlerCall = mapLib.map.on.mock.calls.find(call => call[0] === 'dragstart');
+    expect(dragHandlerCall).toBeUndefined();
+
+    // Check that zoomstart is also NOT registered
+    const zoomHandlerCall = mapLib.map.on.mock.calls.find(call => call[0].includes('zoomstart'));
+    expect(zoomHandlerCall).toBeUndefined();
   });
 });

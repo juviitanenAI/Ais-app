@@ -1,6 +1,7 @@
 <script>
-  import { vessels, activeMmsi, currentSearchResults, historyMinutes } from '../lib/stores.js';
+  import { vessels, activeMmsi, currentSearchResults, autoFollow } from '../lib/stores.js';
   import { vesselTypeInfo } from '../lib/utils.js';
+  import { fitToVessels, setAutoFollow } from '../lib/map.js';
 
   let mmsi = null;
   let name = '(Unknown)', typeLab = 'Unknown', typeCol = '#8899aa';
@@ -26,12 +27,30 @@
     }
   }
 
+  function handleClose() {
+    activeMmsi.set(null);
+    autoFollow.set(false);
+  }
+
+  function toggleFollow() {
+    setAutoFollow(!$autoFollow);
+  }
 </script>
 
 <div class="detail-panel" class:visible={$activeMmsi !== null}>
   <div class="detail-header">
-    <span class="detail-name">{name}</span>
-    <button class="detail-close" onclick={() => activeMmsi.set(null)}>✕</button>
+    <div class="detail-name-row">
+      <span class="detail-name">{name}</span>
+      <button 
+        class="detail-follow-btn" 
+        class:active={$autoFollow}
+        onclick={toggleFollow}
+        title={$autoFollow ? "Following - click to stop" : "Not following - click to follow"}
+      >
+        {$autoFollow ? '📍 Following' : '🛰️ Follow'}
+      </button>
+    </div>
+    <button class="detail-close" onclick={handleClose}>✕</button>
   </div>
   
   <div class="detail-grid">

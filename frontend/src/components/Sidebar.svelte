@@ -1,5 +1,5 @@
 <script>
-  import { sidebarCollapsed, sidebarExpandedAt, vessels, wsConnected, heatmapMode, toggleHeatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels, activeTab, heatmapLoading } from '../lib/stores.js';
+  import { sidebarCollapsed, sidebarExpandedAt, vessels, wsConnected, heatmapMode, toggleHeatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels, activeTab, heatmapLoading, autoFollow } from '../lib/stores.js';
   import { fade } from 'svelte/transition';
   import { APP_VERSION, MOBILE_VERSION } from '../lib/config.js';
   import { fetchVesselCategories, fetchSearchResults } from '../lib/api.js';
@@ -29,6 +29,7 @@
   function clearSelection() {
     selectedMmsis.set(new Set());
     activeMmsi.set(null);
+    autoFollow.set(false);
   }
 
   function toggleSidebar(e) {

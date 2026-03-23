@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/svelte';
+import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 import DetailPanel from '../components/DetailPanel.svelte';
-import { vessels, activeMmsi, currentSearchResults, selectedMmsis, vesselTypeCache } from '../lib/stores.js';
+import { vessels, activeMmsi, currentSearchResults, selectedMmsis, vesselTypeCache, autoFollow } from '../lib/stores.js';
+import { get } from 'svelte/store';
 
 describe('DetailPanel Component', () => {
   beforeEach(() => {
@@ -61,5 +62,23 @@ describe('DetailPanel Component', () => {
     expect(values).toContain('180°'); // formatted cog
     expect(values).toContain('182°'); // formatted heading
     expect(values).toContain('Helsinki'); // destination
+  });
+
+  it('toggles auto-follow when the button is clicked', async () => {
+    activeMmsi.set('12345');
+    autoFollow.set(false);
+    render(DetailPanel);
+    
+    const followBtn = screen.getByRole('button', { name: /Follow/i });
+    expect(followBtn.textContent).toContain('Follow');
+    expect(get(autoFollow)).toBe(false);
+
+    await fireEvent.click(followBtn);
+    expect(followBtn.textContent).toContain('Following');
+    expect(get(autoFollow)).toBe(true);
+
+    await fireEvent.click(followBtn);
+    expect(followBtn.textContent).toContain('Follow');
+    expect(get(autoFollow)).toBe(false);
   });
 });

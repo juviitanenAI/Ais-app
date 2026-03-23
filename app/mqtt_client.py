@@ -7,7 +7,7 @@ from typing import Optional
 import paho.mqtt.client as mqtt
 
 from .config import settings
-from . import state, db
+from . import state
 from .ws_manager import WebSocketManager
 
 def in_bbox(lat: float, lon: float) -> bool:
@@ -29,67 +29,71 @@ class MqttService:
         self.loop = loop
         self.client: Optional[mqtt.Client] = None
 
-    def _on_connect(self, client, userdata, flags, rc, properties=None):
+    def _on_connect(self, _client, _userdata, _flags, rc, _properties=None):
         if rc == 0:
             print("[MQTT] Connected")
             # Aiheiden mallit dokumentaatiossa: vessels-v2/<mmsi>/location & /metadata
-            client.subscribe("vessels-v2/+/location")
-            client.subscribe("vessels-v2/+/metadata")
+            _client.subscribe("vessels-v2/+/location")
+            _client.subscribe("vessels-v2/+/metadata")
         else:
             print("[MQTT] Connect failed:", rc)
 
-    def _on_message(self, client, userdata, msg):
+    def _get_vtype_info(self, vtype_code: str) -> dict:
+        """Helper to get standardized vessel type info from cache."""
+        style = state.vessel_type_cache.get(vtype_code, {})
+        return {
+            "color": style.get("color", "#8899aa"),
+            "label": style.get("desc_en") or style.get("desc_fi") or "Other",
+            "category": style.get("category", "Other")
+        }
+
+    def _on_message(self, _client, _userdata, msg):
         try:
             topic = msg.topic
             if not topic.startswith("vessels-v2/"):
                 return
             parts = topic.split("/")
+            if len(parts) < 3:
+                return
             mmsi, kind = parts[1], parts[2]
             payload = json.loads(msg.payload.decode("utf-8"))
 
+            now = int(time.time())
             with state.latest_lock:
-                v = state.latest.setdefault(mmsi, {"loc": None, "meta": {}, "last_seen": int(time.time())})
+                # Optimized access: get existing or initialize new entry
+                if mmsi not in state.latest:
+                    state.latest[mmsi] = {"loc": None, "meta": {}, "last_seen": now}
+                v = state.latest[mmsi]
 
                 if kind == "metadata":
                     v["meta"].update(payload)
-                    # Broadcast meta update
+                    v["last_seen"] = now  # Update activity on metadata too
+                    
                     vtype_code = str(payload.get("type") or v["meta"].get("type", ""))
-                    style = state.vessel_type_cache.get(vtype_code, {})
                     message = {
                         "type": "metadata",
                         "mmsi": mmsi,
                         "meta": payload,
-                        "vtype_info": {
-                            "color": style.get("color", "#8899aa"),
-                            "label": style.get("desc_en") or style.get("desc_fi") or "Other",
-                            "category": style.get("category", "Other")
-                        }
+                        "vtype_info": self._get_vtype_info(vtype_code)
                     }
                     asyncio.run_coroutine_threadsafe(self.ws_mgr.broadcast_location(mmsi, message), self.loop)
 
                 elif kind == "location":
-                    lat = payload.get("lat"); lon = payload.get("lon")
-                    if lat is None or lon is None:
+                    lat = payload.get("lat")
+                    lon = payload.get("lon")
+                    if lat is None or lon is None or not in_bbox(lat, lon):
                         return
-                    if not in_bbox(lat, lon):
-                        return
-                    v["loc"] = payload
-                    v["last_seen"] = payload.get("time", int(time.time()))
 
-                    # Lähetä WS:lle vain kiinnostuneille
+                    v["loc"] = payload
+                    v["last_seen"] = payload.get("time", now)
+
                     vtype_code = str(v["meta"].get("type", ""))
-                    style = state.vessel_type_cache.get(vtype_code, {})
-                    vtype_info = {
-                        "color": style.get("color", "#8899aa"),
-                        "label": style.get("desc_en") or style.get("desc_fi") or "Other",
-                        "category": style.get("category", "Other")
-                    }
                     message = {
                         "type": "location", 
                         "mmsi": mmsi, 
                         "loc": payload, 
                         "meta": v.get("meta", {}),
-                        "vtype_info": vtype_info
+                        "vtype_info": self._get_vtype_info(vtype_code)
                     }
                     asyncio.run_coroutine_threadsafe(self.ws_mgr.broadcast_location(mmsi, message), self.loop)
 
