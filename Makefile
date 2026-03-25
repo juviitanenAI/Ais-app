@@ -17,6 +17,10 @@ deploy: test
 	@$(MAKE) build-frontend
 	@$(MAKE) sync
 	@$(MAKE) install
+	@if [ "$(SKIP_CHECK)" = "true" ]; then \
+		echo "Skipping remote integrity check..."; \
+		ssh $(REMOTE_USER)@$(REMOTE_HOST) "touch $(REMOTE_DIR)/.skip_integrity"; \
+	fi
 	@echo "Triggering graceful remote shutdown..."
 	-@ssh $(REMOTE_USER)@$(REMOTE_HOST) "curl -f -X POST http://localhost:$(APP_PORT)/api/admin/shutdown || pkill -f 'uvicorn main:app'"
 	@$(MAKE) backup-db

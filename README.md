@@ -42,7 +42,7 @@ pip install -r requirements.txt
 
 The application performs a database integrity check on every startup by default to ensure data safety.
 
-- **`CHECK_INTEGRITY`**: Set to `false` to skip the integrity check for faster startups (e.g., `CHECK_INTEGRITY=false make deploy`).
+- **`SKIP_CHECK`**: Set to `true` to skip the integrity check for faster startups (e.g., `make deploy SKIP_CHECK=true`).
   - *Note*: On a 2GB database, the check can take several minutes on slow I/O. It runs in a background thread to keep the service responsive.
 
 The deployment process automatically creates a backup of the remote database (`vessels.sqlite.bak`) before applying any changes.

@@ -27,7 +27,17 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
 
         # Check integrity (if enabled via settings)
         # We run this in an executor so the event loop stays responsive during the long scan.
-        if settings.CHECK_INTEGRITY:
+        skip_file = Path(".skip_integrity")
+        should_check = settings.CHECK_INTEGRITY
+        if skip_file.exists():
+            should_check = False
+            try:
+                skip_file.unlink()
+                print("[Lifespan] Integrity skip file found and deleted. Skipping check.")
+            except Exception as e:
+                print(f"[Lifespan] Failed to remove integrity skip file: {e}")
+
+        if should_check:
             await loop.run_in_executor(None, db.check_integrity)
 
         # Load initial state from DB
