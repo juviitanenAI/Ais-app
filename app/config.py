@@ -33,6 +33,9 @@ class Settings:
     # SQLite
     DB_PATH: str = os.getenv("DB_PATH", "vessels.sqlite")
 
+    # Digitraffic Buoy Measurements (SSE but polling 30min is fine)
+    BUOY_SSE_URL: str = os.getenv("BUOY_SSE_URL", "https://meri.digitraffic.fi/api/sse/v1/measurements")
+
     # Rate limiting compliance
     # Use this header to identify the application as per Digitrafic's recommendations
     DIGITRAFFIC_USER: str = os.getenv("DIGITRAFFIC_USER", "Ais-app-research-project")

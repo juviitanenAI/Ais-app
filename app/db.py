@@ -11,9 +11,21 @@ from . import state
 _db_lock = RLock()
 _rebuild_lock = RLock() # Lock to prevent multiple concurrent rebuilds
 _local = threading.local()
+_db_path = settings.DB_PATH
+
+def set_db_path(path: str):
+    global _db_path
+    _db_path = path
+    # Clear local connection if exists
+    if hasattr(_local, "conn"):
+        try:
+            _local.conn.close()
+        except:
+            pass
+        del _local.conn
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(settings.DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(_db_path, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
     # Changed from NORMAL to FULL for better crash safety (fsync on WAL frames)
     conn.execute("PRAGMA synchronous=FULL;")
@@ -46,6 +58,57 @@ def with_db_retry(func):
         print(f"[DB] Retry failed after 10 attempts: {last_err}")
         return None
     return wrapper
+
+@with_db_retry
+def upsert_buoys(features: List[dict], data_updated_time: str) -> None:
+    db = get_db()
+    with _db_lock, db:
+        for f in features:
+            props = f["properties"]
+            geom = f["geometry"]
+            site_number = props["siteNumber"]
+            name = props.get("siteName")
+            stype = props.get("siteType")
+            lon, lat = geom["coordinates"]
+            last_update = props.get("lastUpdate")
+            
+            db.execute("""
+                INSERT INTO buoy_latest (site_number, name, type, lat, lon, last_update, data_updated_time, properties)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(site_number) DO UPDATE SET
+                    name = excluded.name,
+                    type = excluded.type,
+                    lat = excluded.lat,
+                    lon = excluded.lon,
+                    last_update = excluded.last_update,
+                    data_updated_time = excluded.data_updated_time,
+                    properties = excluded.properties
+            """, (site_number, name, stype, lat, lon, last_update, data_updated_time, json.dumps(props)))
+            
+            # History: site_number + updated_time as PK
+            db.execute("""
+                INSERT OR IGNORE INTO buoy_history (site_number, lat, lon, last_update, data_updated_time, properties)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (site_number, lat, lon, last_update, data_updated_time, json.dumps(props)))
+
+def query_buoys() -> List[dict]:
+    db = get_db()
+    rows = db.execute("SELECT site_number, name, type, lat, lon, last_update, data_updated_time, properties FROM buoy_latest").fetchall()
+    return [{
+        "siteNumber": r[0],
+        "name": r[1],
+        "type": r[2],
+        "lat": r[3],
+        "lon": r[4],
+        "lastUpdate": r[5],
+        "dataUpdatedTime": r[6],
+        "properties": json.loads(r[7])
+    } for r in rows]
+
+def get_latest_buoy_update_time() -> Optional[str]:
+    db = get_db()
+    row = db.execute("SELECT MAX(data_updated_time) FROM buoy_latest").fetchone()
+    return row[0] if row else None
 
 def init_schema() -> None:
     db = get_db()
@@ -118,6 +181,31 @@ def init_schema() -> None:
             time_window INTEGER PRIMARY KEY,
             json_blob TEXT NOT NULL,
             updated_at INTEGER NOT NULL
+        );
+        """)
+
+        db.execute("""
+        CREATE TABLE IF NOT EXISTS buoy_latest (
+            site_number INTEGER PRIMARY KEY,
+            name TEXT,
+            type TEXT,
+            lat REAL,
+            lon REAL,
+            last_update TEXT,
+            data_updated_time TEXT,
+            properties TEXT
+        );
+        """)
+
+        db.execute("""
+        CREATE TABLE IF NOT EXISTS buoy_history (
+            site_number INTEGER,
+            lat REAL,
+            lon REAL,
+            last_update TEXT,
+            data_updated_time TEXT,
+            properties TEXT,
+            PRIMARY KEY (site_number, data_updated_time)
         );
         """)
 

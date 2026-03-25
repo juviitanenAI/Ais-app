@@ -82,3 +82,28 @@ class WebSocketManager:
                     await ws.close()
                 except Exception:
                     pass
+
+    async def broadcast_buoy(self, message: dict):
+        """Lähetä poijupäivitys kaikille klienteille."""
+        import asyncio
+        text = json.dumps(message)
+        
+        async def send(ws: WebSocket):
+            try:
+                await ws.send_text(text)
+            except Exception:
+                return ws
+            return None
+
+        # Gather all sends concurrently
+        tasks = [send(ws) for ws in list(self.clients)]
+        if tasks:
+            results = await asyncio.gather(*tasks)
+            stale = [ws for ws in results if ws is not None]
+            
+            for ws in stale:
+                self.unregister(ws)
+                try:
+                    await ws.close()
+                except Exception:
+                    pass

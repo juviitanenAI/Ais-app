@@ -3,30 +3,41 @@
   import Sidebar from './components/Sidebar.svelte';
   import Map from './components/Map.svelte';
   import LoadingOverlay from './components/LoadingOverlay.svelte';
-  import { sidebarCollapsed, isLoading, activeMmsi } from './lib/stores.js';
-  import { fetchVesselTypes, fetchLiveVesselData, fetchSearchResults } from './lib/api.js';
+  import { sidebarCollapsed, isLoading, activeMmsi, activeBuoySite } from './lib/stores.js';
+  import { fetchVesselTypes, fetchLiveVesselData, fetchSearchResults, fetchBuoys } from './lib/api.js';
   import { connectWebSocket } from './lib/ws.js';
-  import { addOrUpdateVessel, map as leafMap, setAutoFollow } from './lib/map.js';
-  import { vessels as vesselsStore } from './lib/stores.js';
+  import { addOrUpdateVessel, addOrUpdateBuoy, map as leafMap, setAutoFollow, focusOnBuoy } from './lib/map.js';
+  import { vessels as vesselsStore, buoys as buoysStore } from './lib/stores.js';
   import { vesselTypeInfo, shipIcon } from './lib/utils.js';
   import { get } from 'svelte/store';
 
   function handleSelectVessel(mmsi) {
     activeMmsi.set(mmsi);
+    activeBuoySite.set(null); // Clear buoy selection when selecting vessel
     setAutoFollow(true);
-    // Detail panel opening logic will react to activeMmsi
     sidebarCollapsed.set(false);
   }
 
+  function handleFocusOnBuoy(buoy) {
+    focusOnBuoy(buoy);
+    activeMmsi.set(null);
+    sidebarCollapsed.set(false);
+  }
+
+  setContext('mapActions', {
+    focusOnBuoy: handleFocusOnBuoy
+  });
+
   onMount(async () => {
     try {
-      // Parallel fetch: vessel types + live data from DB snapshot
-      const [, data] = await Promise.all([
+      // Parallel fetch: vessel types, live data, and buoys
+      const [_, data, bData] = await Promise.all([
         fetchVesselTypes(),
-        fetchLiveVesselData()
+        fetchLiveVesselData(),
+        fetchBuoys()
       ]);
       
-      // Batch initial load to avoid 800 store updates
+      // Batch initial vessel load
       vesselsStore.update(vs => {
         data.forEach(v => {
           const mmsi = v.mmsi;
@@ -44,14 +55,20 @@
         });
         return { ...vs };
       });
+
+      // Load initial buoys
+      buoysStore.set(bData);
+      bData.forEach(b => {
+        addOrUpdateBuoy(b);
+      });
       
       isLoading.set(false);
     } catch (e) {
-      console.error('[load] Failed to fetch live vessels:', e);
+      console.error('[load] Failed to initial fetch:', e);
       setTimeout(() => isLoading.set(false), 2000);
     }
 
-    // Start WS and search in parallel (non-blocking)
+    // Start WS and search in parallel
     connectWebSocket(handleSelectVessel);
     fetchSearchResults();
   });
@@ -59,15 +76,12 @@
 
 <LoadingOverlay />
 
-<!-- Original map_ui.html had #app and .sidebar-visible on the same div. Svelte mounts INSIDE #app. 
-     We can just add the class to the document body or wrap it here. -->
 <div class="app-container" class:sidebar-visible={!$sidebarCollapsed}>
   <Sidebar />
   <Map />
 </div>
 
 <style>
-  /* Mimic the #app layout from the original index */
   .app-container {
     display: flex;
     height: 100vh;

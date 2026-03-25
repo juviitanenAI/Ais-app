@@ -1,6 +1,7 @@
 <script>
   import VesselList from './VesselList.svelte';
-  import { vessels, filteredVessels, activeTab, switchSecondaryTab, showStatsOverlay, heatmapLoading } from '../lib/stores.js';
+  import BuoyList from './BuoyList.svelte';
+  import { vessels, filteredVessels, buoys, activeTab, switchSecondaryTab, showStatsOverlay, heatmapLoading } from '../lib/stores.js';
 
   export let searchTerm = '';
 </script>
@@ -23,6 +24,13 @@
     </button>
     <button 
       class="tab-btn" 
+      class:active={$activeTab === 'buoys'} 
+      onclick={() => switchSecondaryTab('buoys')}
+    >
+      Buoys ({$buoys.length})
+    </button>
+    <button 
+      class="tab-btn" 
       class:active={$activeTab === 'stats'} 
       onclick={() => switchSecondaryTab('stats')}
     >
@@ -33,6 +41,8 @@
   <div class="tab-content">
     {#if $activeTab === 'vessels'}
       <VesselList {searchTerm} />
+    {:else if $activeTab === 'buoys'}
+      <BuoyList {searchTerm} />
     {:else if $activeTab === 'heatmap'}
       <div class="stats-placeholder">
         <h3>Route Heatmap</h3>

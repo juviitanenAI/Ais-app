@@ -11,6 +11,7 @@ from .config import settings
 from . import db, state
 from .ws_manager import WebSocketManager
 from .mqtt_client import MqttService
+from .buoy_service import BuoyService
 from .snapshot import sampler_task, flusher_task
 from .scripts.update_vessel_types import update_vessel_types
 
@@ -27,6 +28,18 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
             print("[Lifespan] Loading initial vessel state from DB...")
             db.load_latest_into_state()
             print(f"[Lifespan] Initial state loaded. state.latest has {len(state.latest)} vessels.")
+            
+            print("[Lifespan] Loading initial buoy state from DB...")
+            buoy_rows = db.query_buoys()
+            with state.buoys_lock:
+                for b in buoy_rows:
+                    state.buoys[b["siteNumber"]] = {
+                        "lat": b["lat"],
+                        "lon": b["lon"],
+                        "data": b["properties"],
+                        "dataUpdatedTime": b["dataUpdatedTime"]
+                    }
+            print(f"[Lifespan] Initial buoy state loaded. state.buoys has {len(state.buoys)} stations.")
         except Exception as e:
             print(f"[Lifespan] Initial state load failed: {e}")
 
@@ -71,6 +84,10 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         
         # Start flusher task
         f_task = asyncio.create_task(flusher_task())
+        
+        # Start Buoy service
+        buoy_service = BuoyService(ws_mgr, loop)
+        buoy_service.start()
         
         # 4. Check if heatmap cache is empty and rebuild if so
         def check_heatmap_and_rebuild():
@@ -138,6 +155,13 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
     @app.get("/api/vessel-categories")
     def api_vessel_categories():
         return JSONResponse(db.query_vessel_categories())
+
+    # --- API: buoy measurements ---
+    @app.get("/api/buoys")
+    def api_buoys():
+        with state.buoys_lock:
+            # Convert siteNumber keys to strings if needed or just return list
+            return JSONResponse(list(state.buoys.values()))
 
     # --- API: vessel types (for legend and styling) ---
     @app.get("/api/vessel-types")

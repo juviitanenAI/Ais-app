@@ -16,6 +16,7 @@ deploy: test
 	@python3 scripts/bump_version.py
 	@$(MAKE) build-frontend
 	@$(MAKE) sync
+	@$(MAKE) install
 	@echo "Triggering graceful remote shutdown..."
 	-@ssh $(REMOTE_USER)@$(REMOTE_HOST) "curl -f -X POST http://localhost:$(APP_PORT)/api/admin/shutdown || pkill -f 'uvicorn main:app'"
 	@echo "Deployment to $(REMOTE_HOST) complete!"
