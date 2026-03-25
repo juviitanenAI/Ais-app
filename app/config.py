@@ -32,6 +32,7 @@ class Settings:
 
     # SQLite
     DB_PATH: str = os.getenv("DB_PATH", "vessels.sqlite")
+    CHECK_INTEGRITY: bool = os.getenv("CHECK_INTEGRITY", "true").lower() == "true"
 
     # Digitraffic Buoy Measurements (SSE but polling 30min is fine)
     BUOY_SSE_URL: str = os.getenv("BUOY_SSE_URL", "https://meri.digitraffic.fi/api/sse/v1/measurements")

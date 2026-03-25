@@ -23,14 +23,21 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         # Explicit initialization
         db.init_schema()
         
+        loop = asyncio.get_running_loop()
+
+        # Check integrity (if enabled via settings)
+        # We run this in an executor so the event loop stays responsive during the long scan.
+        if settings.CHECK_INTEGRITY:
+            await loop.run_in_executor(None, db.check_integrity)
+
         # Load initial state from DB
         try:
             print("[Lifespan] Loading initial vessel state from DB...")
-            db.load_latest_into_state()
+            await loop.run_in_executor(None, db.load_latest_into_state)
             print(f"[Lifespan] Initial state loaded. state.latest has {len(state.latest)} vessels.")
             
             print("[Lifespan] Loading initial buoy state from DB...")
-            buoy_rows = db.query_buoys()
+            buoy_rows = await loop.run_in_executor(None, db.query_buoys)
             with state.buoys_lock:
                 for b in buoy_rows:
                     state.buoys[b["siteNumber"]] = {
@@ -42,8 +49,6 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
             print(f"[Lifespan] Initial buoy state loaded. state.buoys has {len(state.buoys)} stations.")
         except Exception as e:
             print(f"[Lifespan] Initial state load failed: {e}")
-
-        loop = asyncio.get_running_loop()
 
         # Update vessel types from Digitraffic (run in background)
         def update_and_cache():

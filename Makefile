@@ -1,4 +1,4 @@
-.PHONY: deploy sync install test dev bump_version calculate-views build-frontend fetch-db
+.PHONY: deploy sync install test dev bump_version calculate-views build-frontend fetch-db backup-db
 
 ifneq (,$(wildcard ./.env))
     include .env
@@ -19,6 +19,7 @@ deploy: test
 	@$(MAKE) install
 	@echo "Triggering graceful remote shutdown..."
 	-@ssh $(REMOTE_USER)@$(REMOTE_HOST) "curl -f -X POST http://localhost:$(APP_PORT)/api/admin/shutdown || pkill -f 'uvicorn main:app'"
+	@$(MAKE) backup-db
 	@echo "Deployment to $(REMOTE_HOST) complete!"
 
 build-frontend:
@@ -54,7 +55,11 @@ fetch-db:
 	@echo "Fetching remote database..."
 	@mkdir -p remote_db
 	ssh $(REMOTE_USER)@$(REMOTE_HOST) "cd $(REMOTE_DIR) && .venv/bin/python -c 'from app import db; db.shutdown()'"
-	scp $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/vessels.sqlite* remote_db/
+	rsync -avz $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/vessels.sqlite* remote_db/
+
+backup-db:
+	@echo "Backing up remote database..."
+	-@ssh $(REMOTE_USER)@$(REMOTE_HOST) "cp $(REMOTE_DIR)/vessels.sqlite $(REMOTE_DIR)/vessels.sqlite.bak"
 
 push-db:
 	@echo "Pushing local database to remote..."

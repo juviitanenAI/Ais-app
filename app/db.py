@@ -110,16 +110,25 @@ def get_latest_buoy_update_time() -> Optional[str]:
     row = db.execute("SELECT MAX(data_updated_time) FROM buoy_latest").fetchone()
     return row[0] if row else None
 
+def check_integrity() -> bool:
+    """Perform a quick integrity verify. Returns True if OK."""
+    db = get_db()
+    try:
+        print("[DB] Running integrity check...")
+        res = db.execute("PRAGMA integrity_check(100);").fetchone()
+        if res and res[0] == "ok":
+            print("[DB] Integrity check passed.")
+            return True
+        else:
+            print(f"[DB] WARNING: Integrity check failed: {res[0] if res else 'Unknown error'}")
+            return False
+    except Exception as e:
+        print(f"[DB] Integrity check error: {e}")
+        return False
+
 def init_schema() -> None:
     db = get_db()
     with _db_lock, db:
-        # Quick integrity verify on startup
-        try:
-            res = db.execute("PRAGMA integrity_check(100);").fetchone()
-            if res and res[0] != "ok":
-                print(f"[DB] WARNING: Integrity check failed: {res[0]}")
-        except Exception as e:
-            print(f"[DB] Integrity check error: {e}")
 
         db.execute("""
         CREATE TABLE IF NOT EXISTS vessel_latest (
