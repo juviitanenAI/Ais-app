@@ -34,15 +34,36 @@ pip install -r requirements.txt
 
 ## Running
 
-```bash
-# Activate venv (if not already active)
-source venv/bin/activate
+### Development Mode (Recommended)
 
-# Start the app
+The easiest way to start both the backend and frontend dev server is using the `Makefile`:
+
+```bash
+make dev
+```
+
+This will concurrently start:
+- **FastAPI Backend**: `python main.py`
+- **Vite/Svelte Frontend**: `cd frontend && npm run dev`
+
+### Manual Run (Without Make)
+
+If you prefer to run the components separately, open two terminal windows:
+
+#### Window 1: Backend
+```bash
+source venv/bin/activate
 python main.py
 ```
 
-Open **http://localhost:8000** in your browser.
+#### Window 2: Frontend
+```bash
+cd frontend
+npm install  # If first time
+npm run dev
+```
+
+The frontend will be available at **http://localhost:5173** (Vite default), and it will proxy requests to the backend at **http://localhost:8000**.
 
 > The app connects to Digitraffic's public MQTT broker on startup. Vessels will start appearing on the map within ~10–30 seconds as AIS data streams in.
 
