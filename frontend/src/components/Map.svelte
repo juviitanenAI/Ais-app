@@ -1,8 +1,8 @@
 <script>
   import { onMount } from 'svelte';
-  import { heatmapMode, heatmapLoading, historyMinutes, filterCategories, vesselTypeCache, vessels, hideOthers, activeMmsi, selectedMmsis } from '../lib/stores.js';
+  import { heatmapMode, heatmapLoading, historyMinutes, filterCategories, vesselTypeCache, vessels, buoys, hideOthers, activeMmsi, selectedMmsis, activeBuoySite } from '../lib/stores.js';
   import { fetchHeatmapData, fetchHistoryData } from '../lib/api.js';
-  import { initMap, renderHeatmap, updateMarkerVisibility, renderHistory, clearHistory, fitToVessels } from '../lib/map.js';
+  import { initMap, map, renderHeatmap, updateMarkerVisibility, updateBuoyVisibility, renderHistory, clearHistory, fitToVessels, buoyMarkers } from '../lib/map.js';
   import Legend from './Legend.svelte';
 
   let mapElement;
@@ -37,8 +37,12 @@
   // Reactively hide markers on map when filters or heatmap state changes
   $: {
     const fCats = $filterCategories;
+    const hMode = $heatmapMode;
     if (Object.keys($vessels).length > 0) {
       Object.values($vessels).forEach(v => updateMarkerVisibility(v.marker, v.data));
+    }
+    if (buoyMarkers.size > 0) {
+      buoyMarkers.forEach(marker => updateBuoyVisibility(marker));
     }
   }
 
@@ -75,7 +79,7 @@
   // Reactively update marker highlights and selection ring
   import { updateHighlights } from '../lib/map.js';
   $: {
-    updateHighlights($activeMmsi, $selectedMmsis);
+    updateHighlights($activeMmsi, $selectedMmsis, $activeBuoySite);
   }
 </script>
 

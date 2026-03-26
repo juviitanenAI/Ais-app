@@ -7,7 +7,9 @@ import * as mapLib from '../lib/map.js';
 global.L = {
   latLngBounds: vi.fn((pts) => ({
     pts,
-    isValid: () => pts && pts.length > 0
+    isValid: () => pts && pts.length > 0,
+    getNorthEast: () => ({ equals: (other) => true }),
+    getSouthWest: () => ({ equals: (other) => true })
   })),
   polyline: vi.fn(() => ({
     addTo: vi.fn().mockReturnThis(),
