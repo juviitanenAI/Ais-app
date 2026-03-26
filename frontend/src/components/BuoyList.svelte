@@ -81,7 +81,7 @@
         </div>
         
         <div class="buoy-footer">
-          <span class="update-time">Updated: {new Date(buoy.data.lastUpdate).toLocaleTimeString()}</span>
+          <span class="update-time">Updated: {new Date(buoy.data.lastUpdate).toLocaleString('fi-FI', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
         </div>
       </div>
     {/each}

@@ -12,6 +12,8 @@ REMOTE_USER ?= dummy
 REMOTE_HOST ?= dummy
 REMOTE_DIR ?= /home/$(REMOTE_USER)/publicwsgi/ais-app
 
+# To skip the remote database integrity check (pragma check) during deployment, 
+# run: make deploy SKIP_CHECK=true
 deploy: test
 	@python3 scripts/bump_version.py
 	@$(MAKE) build-frontend

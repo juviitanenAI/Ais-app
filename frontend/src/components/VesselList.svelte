@@ -43,7 +43,7 @@
   function getTimeStr(ts) {
     if (!ts) return 'Unknown';
     const d = new Date(ts * 1000);
-    return d.toLocaleString('fi-FI', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+    return d.toLocaleString('fi-FI', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'});
   }
 </script>
 

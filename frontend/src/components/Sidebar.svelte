@@ -1,5 +1,5 @@
 <script>
-  import { sidebarCollapsed, sidebarExpandedAt, vessels, wsConnected, heatmapMode, toggleHeatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, hideOthers, filteredVessels, activeTab, heatmapLoading, autoFollow } from '../lib/stores.js';
+  import { sidebarCollapsed, sidebarExpandedAt, vessels, wsConnected, heatmapMode, toggleHeatmapMode, historyMinutes, filterCategories, selectedMmsis, activeMmsi, activeBuoySite, hideOthers, filteredVessels, activeTab, heatmapLoading, autoFollow } from '../lib/stores.js';
   import { fade } from 'svelte/transition';
   import { APP_VERSION, MOBILE_VERSION } from '../lib/config.js';
   import { fetchVesselCategories, fetchSearchResults } from '../lib/api.js';
@@ -44,7 +44,7 @@
   }
 </script>
 
-<div id="sidebar" class:collapsed={$sidebarCollapsed} class:detail-active={$activeMmsi !== null}>
+<div id="sidebar" class:collapsed={$sidebarCollapsed} class:detail-active={$activeMmsi !== null || $activeBuoySite !== null}>
   <div class="sidebar-header">
     <div class="sidebar-title">
       <span class="icon">⚓</span> AIS Tracker

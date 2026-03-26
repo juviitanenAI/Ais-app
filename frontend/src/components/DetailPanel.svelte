@@ -1,15 +1,21 @@
 <script>
-  import { vessels, activeMmsi, currentSearchResults, autoFollow } from '../lib/stores.js';
+  import { vessels, activeMmsi, currentSearchResults, autoFollow, buoys, activeBuoySite } from '../lib/stores.js';
   import { vesselTypeInfo } from '../lib/utils.js';
-  import { fitToVessels, setAutoFollow } from '../lib/map.js';
+  import { setAutoFollow } from '../lib/map.js';
 
   let mmsi = null;
+  let siteNum = null;
   let name = '(Unknown)', typeLab = 'Unknown', typeCol = '#8899aa';
   let speed = '—', hdg = '—', cog = '—', dest = '—';
+  let temp = '—', seaState = '—', trend = '';
+  let updatedAt = '—';
+
+  $: isBuoy = $activeBuoySite !== null;
+  $: isVessel = $activeMmsi !== null;
 
   $: {
-    mmsi = $activeMmsi;
-    if (mmsi) {
+    if ($activeMmsi) {
+      mmsi = $activeMmsi;
       const v = $vessels[mmsi];
       if (v) {
         const d = v.data;
@@ -20,15 +26,30 @@
         hdg = (d.heading != null) ? d.heading.toFixed(0) + '°' : '—';
         cog = (d.cog != null) ? d.cog.toFixed(0) + '°' : '—';
         dest = d.destination || '—';
+        updatedAt = new Date(d.lastUpdate).toLocaleString('fi-FI');
       } else {
         const match = $currentSearchResults.find(r => r.mmsi === mmsi);
         if (match) name = match.name || '(Unknown)';
+      }
+    } else if ($activeBuoySite) {
+      siteNum = $activeBuoySite;
+      const b = $buoys.find(buoy => buoy.data.siteNumber === siteNum);
+      if (b) {
+        const d = b.data;
+        name = d.siteName || '(Unknown Site)';
+        typeLab = d.siteType || 'Buoy';
+        typeCol = '#ffcc00'; // Buoy yellow
+        temp = d.temperature !== null ? d.temperature + ' °C' : '—';
+        seaState = d.seaState || '—';
+        trend = d.trend || '';
+        updatedAt = new Date(d.lastUpdate).toLocaleString('fi-FI');
       }
     }
   }
 
   function handleClose() {
     activeMmsi.set(null);
+    activeBuoySite.set(null);
     autoFollow.set(false);
   }
 
@@ -37,28 +58,41 @@
   }
 </script>
 
-<div class="detail-panel" class:visible={$activeMmsi !== null}>
+<div class="detail-panel" class:visible={isVessel || isBuoy}>
   <div class="detail-header">
     <div class="detail-name-row">
       <span class="detail-name">{name}</span>
-      <button 
-        class="detail-follow-btn" 
-        class:active={$autoFollow}
-        onclick={toggleFollow}
-        title={$autoFollow ? "Following - click to stop" : "Not following - click to follow"}
-      >
-        {$autoFollow ? '📍 Following' : '🛰️ Follow'}
-      </button>
+      {#if isVessel}
+        <button 
+          class="detail-follow-btn" 
+          class:active={$autoFollow}
+          onclick={toggleFollow}
+          title={$autoFollow ? "Following - click to stop" : "Not following - click to follow"}
+        >
+          {$autoFollow ? '📍 Following' : '🛰️ Follow'}
+        </button>
+      {/if}
     </div>
     <button class="detail-close" onclick={handleClose}>✕</button>
   </div>
   
   <div class="detail-grid">
-    <div class="detail-field"><div class="detail-label">MMSI</div><div class="detail-value">{mmsi}</div></div>
-    <div class="detail-field"><div class="detail-label">Type</div><div class="detail-value" style="color:{typeCol}">{typeLab}</div></div>
-    <div class="detail-field"><div class="detail-label">Speed</div><div class="detail-value">{speed}</div></div>
-    <div class="detail-field"><div class="detail-label">Heading</div><div class="detail-value">{hdg}</div></div>
-    <div class="detail-field"><div class="detail-label">Course</div><div class="detail-value">{cog}</div></div>
-    <div class="detail-field"><div class="detail-label">Destination</div><div class="detail-value">{dest}</div></div>
+    {#if isVessel}
+      <div class="detail-field"><div class="detail-label">MMSI</div><div class="detail-value">{mmsi}</div></div>
+      <div class="detail-field"><div class="detail-label">Type</div><div class="detail-value" style="color:{typeCol}">{typeLab}</div></div>
+      <div class="detail-field"><div class="detail-label">Speed</div><div class="detail-value">{speed}</div></div>
+      <div class="detail-field"><div class="detail-label">Heading</div><div class="detail-value">{hdg}</div></div>
+      <div class="detail-field"><div class="detail-label">Course</div><div class="detail-value">{cog}</div></div>
+      <div class="detail-field"><div class="detail-label">Destination</div><div class="detail-value">{dest}</div></div>
+    {:else if isBuoy}
+      <div class="detail-field"><div class="detail-label">Site #</div><div class="detail-value">{siteNum}</div></div>
+      <div class="detail-field"><div class="detail-label">Type</div><div class="detail-value" style="color:{typeCol}">{typeLab}</div></div>
+      <div class="detail-field"><div class="detail-label">Temperature</div><div class="detail-value">{temp}</div></div>
+      <div class="detail-field"><div class="detail-label">Sea State</div><div class="detail-value">{seaState} {trend ? '(' + trend + ')' : ''}</div></div>
+    {/if}
+    <div class="detail-field" style="grid-column: span 2;">
+      <div class="detail-label">Last Update</div>
+      <div class="detail-value">{updatedAt}</div>
+    </div>
   </div>
 </div>
