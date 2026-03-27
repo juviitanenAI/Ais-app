@@ -1,6 +1,7 @@
 import asyncio
 import httpx
 import time
+from datetime import datetime, timezone, timedelta
 from .config import settings
 from . import db, state
 from .ws_manager import WebSocketManager
@@ -42,13 +43,30 @@ class BuoyService:
                 print(f"[BuoyService] New data found: {data_updated_time}. Updating...")
                 features = data.get("features", [])
                 
-                # Update DB
-                await self.loop.run_in_executor(None, db.upsert_buoys, features, data_updated_time)
+                # Update DB (handles history and fresh labels)
+                await self.loop.run_in_executor(None, db.upsert_buoys, features, data_updated_time, settings.BUOY_RETENTION_MINUTES)
                 
-                # Update State
+                # Update State (filter stale ones in-memory)
+                cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.BUOY_RETENTION_MINUTES)
+                fresh_count = 0
+                
                 with state.buoys_lock:
                     for f in features:
                         props = f["properties"]
+                        last_upd = props.get("lastUpdate")
+                        
+                        is_stale = False
+                        if last_upd:
+                            try:
+                                dt = datetime.fromisoformat(last_upd.replace("Z", "+00:00"))
+                                if dt < cutoff:
+                                    is_stale = True
+                            except ValueError:
+                                pass
+                        
+                        if is_stale:
+                            continue
+                            
                         site_number = props["siteNumber"]
                         state.buoys[site_number] = {
                             "lat": f["geometry"]["coordinates"][1],
@@ -56,15 +74,16 @@ class BuoyService:
                             "data": props,
                             "dataUpdatedTime": data_updated_time
                         }
+                        fresh_count += 1
 
                 # Broadcast to WS clients
                 message = {
                     "type": "buoys",
                     "dataUpdatedTime": data_updated_time,
-                    "count": len(features)
+                    "count": fresh_count
                 }
                 await self.ws_mgr.broadcast_buoy(message)
-                print(f"[BuoyService] Successfully processed {len(features)} buoys.")
+                print(f"[BuoyService] Successfully processed {len(features)} buoys ({fresh_count} fresh).")
 
         except Exception as e:
             print(f"[BuoyService] Error in fetch_and_process: {e}")

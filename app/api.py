@@ -7,6 +7,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 import asyncio
 
+from datetime import datetime, timezone, timedelta
 from .config import settings
 from . import db, state
 from .ws_manager import WebSocketManager
@@ -48,15 +49,31 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
             
             print("[Lifespan] Loading initial buoy state from DB...")
             buoy_rows = await loop.run_in_executor(None, db.query_buoys)
+            
+            buoy_cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.BUOY_RETENTION_MINUTES)
+            loaded_count = 0
+            
             with state.buoys_lock:
                 for b in buoy_rows:
-                    state.buoys[b["siteNumber"]] = {
-                        "lat": b["lat"],
-                        "lon": b["lon"],
-                        "data": b["properties"],
-                        "dataUpdatedTime": b["dataUpdatedTime"]
-                    }
-            print(f"[Lifespan] Initial buoy state loaded. state.buoys has {len(state.buoys)} stations.")
+                    last_upd = b.get("lastUpdate")
+                    is_stale = False
+                    if last_upd:
+                        try:
+                            dt = datetime.fromisoformat(last_upd.replace("Z", "+00:00"))
+                            if dt < buoy_cutoff:
+                                is_stale = True
+                        except ValueError:
+                            pass
+                    
+                    if not is_stale:
+                        state.buoys[b["siteNumber"]] = {
+                            "lat": b["lat"],
+                            "lon": b["lon"],
+                            "data": b["properties"],
+                            "dataUpdatedTime": b["dataUpdatedTime"]
+                        }
+                        loaded_count += 1
+            print(f"[Lifespan] Initial buoy state loaded. state.buoys has {loaded_count} stations (skipped {len(buoy_rows) - loaded_count} stale).")
         except Exception as e:
             print(f"[Lifespan] Initial state load failed: {e}")
 

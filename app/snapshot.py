@@ -1,6 +1,7 @@
 # app/snapshot.py
 import asyncio
 import time
+from datetime import datetime, timezone, timedelta
 from typing import Iterable, Set
 from .config import settings
 from . import db, state
@@ -47,13 +48,34 @@ async def sampler_task(ws_mgr: WebSocketManager):
             db.insert_snapshot_for_all(ts_floor)
             db.prune_history(older_than_minutes=settings.SNAPSHOT_RETENTION_MINUTES)
             db.prune_vessel_latest(older_than_minutes=settings.SNAPSHOT_RETENTION_MINUTES)
+            
+            # Prune stale buoys
+            db.prune_buoy_latest(older_than_minutes=settings.BUOY_RETENTION_MINUTES)
 
             # Prune in-memory state.latest
             with state.latest_lock:
-                cutoff_ts = int(time.time()) - settings.SNAPSHOT_RETENTION_MINUTES * 60
-                stale_mmsis = [mmsi for mmsi, v in state.latest.items() if (v.get("last_seen") or 0) < cutoff_ts]
+                vessel_cutoff = int(time.time()) - settings.SNAPSHOT_RETENTION_MINUTES * 60
+                stale_mmsis = [mmsi for mmsi, v in state.latest.items() if (v.get("last_seen") or 0) < vessel_cutoff]
                 for mmsi in stale_mmsis:
                     del state.latest[mmsi]
+
+            # Prune in-memory state.buoys
+            with state.buoys_lock:
+                buoy_cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.BUOY_RETENTION_MINUTES)
+                stale_buoys = []
+                for site_num, b in state.buoys.items():
+                    last_upd = b["data"].get("lastUpdate")
+                    if last_upd:
+                        try:
+                            dt = datetime.fromisoformat(last_upd.replace("Z", "+00:00"))
+                            if dt < buoy_cutoff:
+                                stale_buoys.append(site_num)
+                        except ValueError:
+                            pass
+                for site_num in stale_buoys:
+                    del state.buoys[site_num]
+                if stale_buoys:
+                    print(f"[SNAPSHOT] Pruned {len(stale_buoys)} stale buoys from memory.")
 
             print(f"[SNAPSHOT] Wrote snapshot and pruned state/db at {ts_floor}")
 

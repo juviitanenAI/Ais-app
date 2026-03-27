@@ -3,6 +3,7 @@ import json
 import asyncio
 import inspect
 import httpx
+from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 from app.api import create_app
@@ -49,6 +50,7 @@ def client():
     return TestClient(app)
 
 def test_buoy_db_operations():
+    now_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     test_features = [{
         "siteNumber": 123,
         "type": "Feature",
@@ -57,11 +59,11 @@ def test_buoy_db_operations():
             "siteNumber": 123,
             "siteName": "Test Buoy",
             "siteType": "FLOATING",
-            "lastUpdate": "2026-03-24T10:00:00Z",
+            "lastUpdate": now_str,
             "temperature": 15
         }
     }]
-    data_updated_time = "2026-03-24T10:05:00Z"
+    data_updated_time = now_str
     
     db.upsert_buoys(test_features, data_updated_time)
     
@@ -87,12 +89,13 @@ async def test_buoy_service_fetching():
     
     service = BuoyService(ws_mgr, loop)
     
+    now_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     mock_response = {
-        "dataUpdatedTime": "2026-03-24T11:00:00Z",
+        "dataUpdatedTime": now_str,
         "features": [{
             "siteNumber": 456,
             "geometry": {"coordinates": [25.0, 61.0]},
-            "properties": {"siteNumber": 456, "siteName": "Mock Buoy"}
+            "properties": {"siteNumber": 456, "siteName": "Mock Buoy", "lastUpdate": now_str}
         }]
     }
     
@@ -105,7 +108,7 @@ async def test_buoy_service_fetching():
         await service.fetch_and_process()
         
         # Verify DB update
-        assert db.get_latest_buoy_update_time() == "2026-03-24T11:00:00Z"
+        assert db.get_latest_buoy_update_time() == now_str
         
         # Verify State update
         with state.buoys_lock:
@@ -117,13 +120,14 @@ async def test_api_buoys_endpoint():
     ws_mgr = WebSocketManager()
     app = create_app(ws_mgr)
     
+    now_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     # Setup some state
     with state.buoys_lock:
         state.buoys[789] = {
             "lat": 62.0,
             "lon": 26.0,
-            "data": {"siteNumber": 789, "siteName": "API Test Buoy"},
-            "dataUpdatedTime": "2026-03-24T12:00:00Z"
+            "data": {"siteNumber": 789, "siteName": "API Test Buoy", "lastUpdate": now_str},
+            "dataUpdatedTime": now_str
         }
     
     # Use AsyncClient with transport to avoid deprecation warning

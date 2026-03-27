@@ -37,6 +37,10 @@ class Settings:
     # Digitraffic Buoy Measurements (SSE but polling 30min is fine)
     BUOY_SSE_URL: str = os.getenv("BUOY_SSE_URL", "https://meri.digitraffic.fi/api/sse/v1/measurements")
 
+    # Buoy data retention (minutes) - measurements older than this are omitted from live map/list
+    # Default is 1440 minutes (24 hours). History is still preserved in buoy_history.
+    BUOY_RETENTION_MINUTES: int = int(os.getenv("BUOY_RETENTION_MINUTES", "1440"))
+
     # Rate limiting compliance
     # Use this header to identify the application as per Digitrafic's recommendations
     DIGITRAFFIC_USER: str = os.getenv("DIGITRAFFIC_USER", "Ais-app-research-project")

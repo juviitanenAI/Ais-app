@@ -2,6 +2,7 @@
 import json
 import sqlite3
 import time
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple
 from threading import RLock
 import threading
@@ -60,8 +61,10 @@ def with_db_retry(func):
     return wrapper
 
 @with_db_retry
-def upsert_buoys(features: List[dict], data_updated_time: str) -> None:
+def upsert_buoys(features: List[dict], data_updated_time: str, retention_minutes: int = 1440) -> None:
     db = get_db()
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=retention_minutes)
+    
     with _db_lock, db:
         for f in features:
             props = f["properties"]
@@ -72,20 +75,31 @@ def upsert_buoys(features: List[dict], data_updated_time: str) -> None:
             lon, lat = geom["coordinates"]
             last_update = props.get("lastUpdate")
             
-            db.execute("""
-                INSERT INTO buoy_latest (site_number, name, type, lat, lon, last_update, data_updated_time, properties)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(site_number) DO UPDATE SET
-                    name = excluded.name,
-                    type = excluded.type,
-                    lat = excluded.lat,
-                    lon = excluded.lon,
-                    last_update = excluded.last_update,
-                    data_updated_time = excluded.data_updated_time,
-                    properties = excluded.properties
-            """, (site_number, name, stype, lat, lon, last_update, data_updated_time, json.dumps(props)))
+            # Check if this measurement is stale for the live view
+            is_stale = False
+            if last_update:
+                try:
+                    dt = datetime.fromisoformat(last_update.replace("Z", "+00:00"))
+                    if dt < cutoff:
+                        is_stale = True
+                except ValueError:
+                    pass
+
+            if not is_stale:
+                db.execute("""
+                    INSERT INTO buoy_latest (site_number, name, type, lat, lon, last_update, data_updated_time, properties)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(site_number) DO UPDATE SET
+                        name = excluded.name,
+                        type = excluded.type,
+                        lat = excluded.lat,
+                        lon = excluded.lon,
+                        last_update = excluded.last_update,
+                        data_updated_time = excluded.data_updated_time,
+                        properties = excluded.properties
+                """, (site_number, name, stype, lat, lon, last_update, data_updated_time, json.dumps(props)))
             
-            # History: site_number + updated_time as PK
+            # History: ALWAYS insert history (unless duplicate PK)
             db.execute("""
                 INSERT OR IGNORE INTO buoy_history (site_number, lat, lon, last_update, data_updated_time, properties)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -102,7 +116,7 @@ def query_buoys() -> List[dict]:
         "lon": r[4],
         "lastUpdate": r[5],
         "dataUpdatedTime": r[6],
-        "properties": json.loads(r[7])
+        "properties": json.loads(r[7]) if r[7] else {}
     } for r in rows]
 
 def get_latest_buoy_update_time() -> Optional[str]:
@@ -389,6 +403,33 @@ def prune_vessel_latest(older_than_minutes: int = 24 * 60) -> None:
     db = get_db()
     with _db_lock, db:
         db.execute("DELETE FROM vessel_latest WHERE updated_ms < ?", (cutoff_ms,))
+
+@with_db_retry
+def prune_buoy_latest(older_than_minutes: int = 1440) -> None:
+    """Poista stale-poijut buoy_latest -taulusta (last_update perusteella)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
+    db = get_db()
+    
+    # Haetaan kaikki poijut, jotta voimme parsia ISO-aikaleimat Pythonissa
+    # (SQLite julian/unixepoch ei välttämättä tykkää kaikista ISO-varianteista)
+    with _db_lock, db:
+        rows = db.execute("SELECT site_number, last_update FROM buoy_latest").fetchall()
+        to_delete = []
+        for site_num, last_upd_str in rows:
+            if not last_upd_str:
+                continue
+            try:
+                # Replace 'Z' with +00:00 for ISO parsing if needed
+                dt = datetime.fromisoformat(last_upd_str.replace("Z", "+00:00"))
+                if dt < cutoff:
+                    to_delete.append(site_num)
+            except ValueError:
+                print(f"[DB] Could not parse buoy last_update: {last_upd_str}")
+                continue
+        
+        if to_delete:
+            db.executemany("DELETE FROM buoy_latest WHERE site_number = ?", [(s,) for s in to_delete])
+            print(f"[DB] Pruned {len(to_delete)} stale buoys from buoy_latest.")
 
 def insert_snapshot_for_all(ts_floor: int) -> None:
     """Kerää state.latestistä rivit kaikista MMSI:stä ja kirjoita 15 min näyte."""
