@@ -1,7 +1,7 @@
 <script>
   import { get } from 'svelte/store';
   import { vessels, activeMmsi, selectedMmsis, heatmapMode, filteredVessels, sidebarExpandedAt } from '../lib/stores.js';
-  import { filterVessels, compareVessels, vesselTypeInfo } from '../lib/utils.js';
+  import { filterVessels, compareVessels, vesselTypeInfo, formatDate } from '../lib/utils.js';
 
   export let searchTerm = '';
 
@@ -14,9 +14,10 @@
   }
 
   function togglePin(mmsi, event) {
+    const target = /** @type {HTMLInputElement} */ (event.target);
     // We update the Set reference to trigger reactivity
     const newSet = new Set($selectedMmsis);
-    if (event.target.checked) {
+    if (target.checked) {
       newSet.add(mmsi);
     } else {
       newSet.delete(mmsi);
@@ -41,9 +42,7 @@
   }
 
   function getTimeStr(ts) {
-    if (!ts) return 'Unknown';
-    const d = new Date(ts * 1000);
-    return d.toLocaleString('fi-FI', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'});
+    return formatDate(ts);
   }
 </script>
 
@@ -58,7 +57,11 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div 
       class="vessel-item {$heatmapMode ? '' : (v.mmsi === $activeMmsi ? 'active' : '')}" 
-      onclick={(e) => { if (!e.target.classList.contains('vessel-pin')) selectShip(v.mmsi); }}
+      onclick={(e) => { 
+        if (e.target instanceof HTMLElement && !e.target.classList.contains('vessel-pin')) {
+          selectShip(v.mmsi); 
+        }
+      }}
     >
       <input type="checkbox" class="vessel-pin" 
         checked={$selectedMmsis.has(v.mmsi)} 

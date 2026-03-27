@@ -86,3 +86,39 @@ export function filterVessels(vess, searchVal) {
     (v.name || '').toLowerCase().includes(search) || v.mmsi.toString().includes(search)
   );
 }
+
+/**
+ * Normalizes and formats a date from diversos sources:
+ * - Unix timestamp in seconds
+ * - Unix timestamp in milliseconds
+ * - ISO string
+ * 
+ * Returns a Finnish-localized string (DD.MM.YYYY HH:mm) or "Unknown".
+ */
+export function formatDate(ts) {
+  if (ts === null || ts === undefined || ts === '' || ts === 0) return 'Unknown';
+  
+  let date;
+  if (typeof ts === 'number') {
+    // Detect seconds vs milliseconds
+    // Unixtimestamp 10^10 is year 2286. 10^12 is year 2001 (ms).
+    // So if it's less than 10^11, it's almost certainly seconds.
+    if (ts < 100000000000) {
+      date = new Date(ts * 1000);
+    } else {
+      date = new Date(ts);
+    }
+  } else {
+    date = new Date(ts);
+  }
+
+  if (isNaN(date.getTime())) return 'Invalid Date';
+  
+  return date.toLocaleString('fi-FI', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}

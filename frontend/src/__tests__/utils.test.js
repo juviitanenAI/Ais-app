@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { vesselTypeInfo, createShipSvg, compareVessels, filterVessels } from '../lib/utils.js';
+import { vesselTypeInfo, createShipSvg, compareVessels, filterVessels, formatDate } from '../lib/utils.js';
 import { vesselTypeCache } from '../lib/stores.js';
 
 describe('Utility Functions', () => {
@@ -88,6 +88,36 @@ describe('Utility Functions', () => {
 
     it('filters by mmsi', () => {
       expect(filterVessels(vessels, '456')).toEqual([vessels[1]]);
+    });
+  });
+
+  describe('formatDate', () => {
+    it('formats unix timestamp in seconds correctly', () => {
+      // 1711561511 -> 27.03.2024
+      const result = formatDate(1711561511);
+      expect(result).toMatch(/27\.03\.2024.*?19[:.]45/);
+    });
+
+    it('formats unix timestamp in milliseconds correctly', () => {
+      const result = formatDate(1711561511000);
+      expect(result).toMatch(/27\.03\.2024.*?19[:.]45/);
+    });
+
+    it('formats ISO string correctly', () => {
+      const result = formatDate("2024-03-27T19:45:00Z");
+      // Environment timezone might affect the hours, so we check for date and segments
+      expect(result).toMatch(/27\.03\.2024.*?\d{2}[:.]45/);
+    });
+
+    it('returns "Unknown" for null, undefined, 0, or empty string', () => {
+      expect(formatDate(null)).toBe('Unknown');
+      expect(formatDate(undefined)).toBe('Unknown');
+      expect(formatDate(0)).toBe('Unknown');
+      expect(formatDate('')).toBe('Unknown');
+    });
+
+    it('returns "Invalid Date" for garbage strings', () => {
+      expect(formatDate('not-a-date')).toBe('Invalid Date');
     });
   });
 });

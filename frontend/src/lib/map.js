@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { vessels as vesselsStore, buoys as buoysStore, activeBuoySite, selectedMmsis, activeMmsi, heatmapMode, filterCategories, hideOthers, sidebarCollapsed, autoFollow } from './stores.js';
-import { vesselTypeInfo, shipIcon, buoyIcon } from './utils.js';
+import { vesselTypeInfo, shipIcon, buoyIcon, formatDate } from './utils.js';
 
 export let map = null;
 export let heatmapLayer = null;
@@ -428,7 +428,7 @@ export function updateBuoyPopupContent(marker, d) {
     <div class="popup-row"><span>Type</span><span>${d.siteType}</span></div>
     ${d.temperature !== null ? `<div class="popup-row"><span>Temp</span><span>${d.temperature}°C</span></div>` : ''}
     ${d.seaState ? `<div class="popup-row"><span>Sea State</span><span>${d.seaState}</span></div>` : ''}
-    <div class="popup-footer">Last Update: ${new Date(d.lastUpdate).toLocaleString()}</div>
+    <div class="popup-footer">Last Update: ${formatDate(d.lastUpdate)}</div>
   `);
 }
 

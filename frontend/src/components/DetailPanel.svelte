@@ -1,6 +1,6 @@
 <script>
   import { vessels, activeMmsi, currentSearchResults, autoFollow, buoys, activeBuoySite } from '../lib/stores.js';
-  import { vesselTypeInfo } from '../lib/utils.js';
+  import { vesselTypeInfo, formatDate } from '../lib/utils.js';
   import { setAutoFollow } from '../lib/map.js';
 
   let mmsi = null;
@@ -26,7 +26,7 @@
         hdg = (d.heading != null) ? d.heading.toFixed(0) + '°' : '—';
         cog = (d.cog != null) ? d.cog.toFixed(0) + '°' : '—';
         dest = d.destination || '—';
-        updatedAt = new Date(d.lastUpdate).toLocaleString('fi-FI');
+        updatedAt = formatDate(d.lastSeen || v.lastUpdate);
       } else {
         const match = $currentSearchResults.find(r => r.mmsi === mmsi);
         if (match) name = match.name || '(Unknown)';
@@ -42,7 +42,7 @@
         temp = d.temperature !== null ? d.temperature + ' °C' : '—';
         seaState = d.seaState || '—';
         trend = d.trend || '';
-        updatedAt = new Date(d.lastUpdate).toLocaleString('fi-FI');
+        updatedAt = formatDate(b.dataUpdatedTime);
       }
     }
   }

@@ -62,6 +62,7 @@ export function connectWebSocket(onSelectCallback) {
         sog: msg.loc?.sog,
         cog: msg.loc?.cog,
         heading: msg.loc?.heading,
+        lastSeen: msg.loc?.time || Date.now() / 1000,
       };
 
       addOrUpdateVessel(v, onSelectCallback);
