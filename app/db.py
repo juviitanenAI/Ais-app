@@ -8,6 +8,7 @@ from threading import RLock
 import threading
 from .config import settings
 from . import state
+from .utils import validate_imo
  
 _db_lock = RLock()
 _rebuild_lock = RLock() # Lock to prevent multiple concurrent rebuilds
@@ -158,9 +159,17 @@ def init_schema() -> None:
             cog REAL,
             heading REAL,
             meta_ts_ms INTEGER,
-            updated_ms INTEGER
+            updated_ms INTEGER,
+            imo INTEGER
         );
         """)
+
+        # Add imo column to existing databases if it doesn't exist
+        cursor = db.execute("PRAGMA table_info(vessel_latest)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if columns and "imo" not in columns:
+            print("[DB] Adding 'imo' column to vessel_latest...")
+            db.execute("ALTER TABLE vessel_latest ADD COLUMN imo INTEGER;")
         db.execute("""
         CREATE TABLE IF NOT EXISTS vessel_samples (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -250,16 +259,20 @@ def upsert_latest(mmsi: str, loc: Optional[dict] = None, meta: Optional[dict] = 
     heading = loc.get("heading") if loc else None
 
     updated_ms = int(time.time() * 1000)
+    
+    imo = meta.get("imo") if meta else None
+    if imo is not None and not validate_imo(imo):
+        imo = None
 
     db = get_db()
     with _db_lock, db:
-        _upsert_latest_stmt(db, mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms)
+        _upsert_latest_stmt(db, mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms, imo)
 
-def _upsert_latest_stmt(db, mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms):
+def _upsert_latest_stmt(db, mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms, imo):
     db.execute("""
         INSERT INTO vessel_latest
-            (mmsi, name, call_sign, type, destination, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (mmsi, name, call_sign, type, destination, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms, imo)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(mmsi) DO UPDATE SET
             name = COALESCE(excluded.name, vessel_latest.name),
             call_sign = COALESCE(excluded.call_sign, vessel_latest.call_sign),
@@ -272,8 +285,9 @@ def _upsert_latest_stmt(db, mmsi, name, call_sign, vtype, dest, last_lat, last_l
             cog = COALESCE(excluded.cog, vessel_latest.cog),
             heading = COALESCE(excluded.heading, vessel_latest.heading),
             meta_ts_ms = COALESCE(excluded.meta_ts_ms, vessel_latest.meta_ts_ms),
-            updated_ms = excluded.updated_ms
-    """, (mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms))
+            updated_ms = excluded.updated_ms,
+            imo = COALESCE(excluded.imo, vessel_latest.imo)
+    """, (mmsi, name, call_sign, vtype, dest, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, updated_ms, imo))
 
 @with_db_retry
 def upsert_latest_batch(items: List[dict]) -> None:
@@ -287,11 +301,15 @@ def upsert_latest_batch(items: List[dict]) -> None:
             mmsi = item["mmsi"]
             loc = item.get("loc") or {}
             meta = item.get("meta") or {}
+            imo = meta.get("imo")
+            if imo is not None and not validate_imo(imo):
+                imo = None
+                
             _upsert_latest_stmt(
                 db, mmsi, 
                 meta.get("name"), meta.get("callSign"), meta.get("type"), meta.get("destination"),
                 loc.get("lat"), loc.get("lon"), loc.get("time"), loc.get("sog"), loc.get("cog"), loc.get("heading"),
-                meta.get("timestamp"), updated_ms
+                meta.get("timestamp"), updated_ms, imo
             )
 
 def load_latest_into_state() -> None:
@@ -301,7 +319,7 @@ def load_latest_into_state() -> None:
     # Käyttäjän toiveen mukaan "since we might be missing a bunch".
     # Otetaan kaikki vessel_latest -taulun rivit.
     rows = db.execute("""
-        SELECT mmsi, name, call_sign, type, destination, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms
+        SELECT mmsi, name, call_sign, type, destination, last_lat, last_lon, last_time, sog, cog, heading, meta_ts_ms, imo
         FROM vessel_latest
     """).fetchall()
     
@@ -323,7 +341,7 @@ def load_latest_into_state() -> None:
                 "loc": loc,
                 "meta": {
                     "name": r[1], "callSign": r[2], "type": r[3],
-                    "destination": r[4], "timestamp": r[11]
+                    "destination": r[4], "timestamp": r[11], "imo": r[12]
                 },
                 "last_seen": r[7] or (r[11] // 1000 if r[11] else int(time.time()))
             }

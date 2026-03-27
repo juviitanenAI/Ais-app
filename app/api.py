@@ -231,6 +231,7 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
                 "cog": loc.get("cog"),
                 "heading": loc.get("heading"),
                 "lastSeen": v.get("last_seen"),
+                "imo": meta.get("imo")
             })
         return JSONResponse(result)
 

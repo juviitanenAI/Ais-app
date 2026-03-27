@@ -28,6 +28,7 @@ export function connectWebSocket(onSelectCallback) {
             existing.data.name = msg.meta?.name || existing.data.name;
             existing.data.type = msg.meta?.type || existing.data.type;
             existing.data.destination = msg.meta?.destination || existing.data.destination;
+            existing.data.imo = msg.meta?.imo || existing.data.imo;
             existing.data.vtype_info = msg.vtype_info || existing.data.vtype_info;
             addOrUpdateVessel(existing.data, onSelectCallback);
           }
@@ -63,6 +64,7 @@ export function connectWebSocket(onSelectCallback) {
         cog: msg.loc?.cog,
         heading: msg.loc?.heading,
         lastSeen: msg.loc?.time || Date.now() / 1000,
+        imo: msg.meta?.imo || vessels[msg.mmsi]?.data?.imo
       };
 
       addOrUpdateVessel(v, onSelectCallback);

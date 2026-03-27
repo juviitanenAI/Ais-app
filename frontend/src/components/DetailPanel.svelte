@@ -6,7 +6,7 @@
   let mmsi = null;
   let siteNum = null;
   let name = '(Unknown)', typeLab = 'Unknown', typeCol = '#8899aa';
-  let speed = '—', hdg = '—', cog = '—', dest = '—';
+  let speed = '—', hdg = '—', cog = '—', dest = '—', imo = null;
   let temp = '—', seaState = '—', trend = '';
   let updatedAt = '—';
 
@@ -26,6 +26,7 @@
         hdg = (d.heading != null) ? d.heading.toFixed(0) + '°' : '—';
         cog = (d.cog != null) ? d.cog.toFixed(0) + '°' : '—';
         dest = d.destination || '—';
+        imo = d.imo;
         updatedAt = formatDate(d.lastSeen || v.lastUpdate);
       } else {
         const match = $currentSearchResults.find(r => r.mmsi === mmsi);
@@ -84,6 +85,21 @@
       <div class="detail-field"><div class="detail-label">Heading</div><div class="detail-value">{hdg}</div></div>
       <div class="detail-field"><div class="detail-label">Course</div><div class="detail-value">{cog}</div></div>
       <div class="detail-field"><div class="detail-label">Destination</div><div class="detail-value">{dest}</div></div>
+      {#if imo}
+        <div class="detail-field"><div class="detail-label">IMO</div><div class="detail-value">{imo}</div></div>
+        <div class="detail-field">
+          <div class="detail-label">External Info</div>
+          <div class="detail-value">
+            <a href="https://www.marinetraffic.com/ais/details/ships/imo:{imo}" 
+               target="_blank" 
+               rel="noopener noreferrer" 
+               class="mt-link" 
+               title="View on MarineTraffic">
+               MarineTraffic ↗️
+            </a>
+          </div>
+        </div>
+      {/if}
     {:else if isBuoy}
       <div class="detail-field"><div class="detail-label">Site #</div><div class="detail-value">{siteNum}</div></div>
       <div class="detail-field"><div class="detail-label">Type</div><div class="detail-value" style="color:{typeCol}">{typeLab}</div></div>
