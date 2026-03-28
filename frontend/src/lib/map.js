@@ -71,23 +71,31 @@ export function showSelectionRing(latlng) {
   }).addTo(map);
 }
 
-export function clearHistory(mmsi = null) {
+export function clearHeatmap() {
   if (heatmapLayer) {
-    map.removeLayer(heatmapLayer);
+    if (map && map.hasLayer(heatmapLayer)) {
+      map.removeLayer(heatmapLayer);
+    }
     heatmapLayer = null;
   }
+}
 
+export function clearHistory(mmsi = null) {
   if (mmsi) {
     const layer = historyLayers.get(mmsi);
     if (layer) {
-      map.removeLayer(layer.polyline);
-      (layer.circles || []).forEach(c => map.removeLayer(c));
+      if (map) {
+        map.removeLayer(layer.polyline);
+        (layer.circles || []).forEach(c => map.removeLayer(c));
+      }
       historyLayers.delete(mmsi);
     }
   } else {
     historyLayers.forEach((layer) => {
-      map.removeLayer(layer.polyline);
-      (layer.circles || []).forEach(c => map.removeLayer(c));
+      if (map) {
+        map.removeLayer(layer.polyline);
+        (layer.circles || []).forEach(c => map.removeLayer(c));
+      }
     });
     historyLayers.clear();
   }

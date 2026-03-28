@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { heatmapMode, heatmapLoading, historyMinutes, filterCategories, vesselTypeCache, vessels, buoys, hideOthers, activeMmsi, selectedMmsis, activeBuoySite } from '../lib/stores.js';
   import { fetchHeatmapData, fetchHistoryData } from '../lib/api.js';
-  import { initMap, map, renderHeatmap, updateMarkerVisibility, updateBuoyVisibility, renderHistory, clearHistory, fitToVessels, buoyMarkers } from '../lib/map.js';
+  import { initMap, map, renderHeatmap, updateMarkerVisibility, updateBuoyVisibility, renderHistory, clearHistory, clearHeatmap, fitToVessels, buoyMarkers } from '../lib/map.js';
   import Legend from './Legend.svelte';
 
   let mapElement;
@@ -30,7 +30,7 @@
         heatmapLoading.set(false);
       });
     } else {
-      clearHistory();
+      clearHeatmap();
     }
   }
 
