@@ -4,7 +4,7 @@ import { API_BASE } from './config.js';
 export async function waitForBackend() {
   while (true) {
     try {
-      const res = await fetch(`${API_BASE}/up`, { method: 'HEAD' });
+      const res = await fetch(`${API_BASE}/api/up`, { method: 'HEAD' });
       if (res.ok) {
         isBackendReady.set(true);
         return;

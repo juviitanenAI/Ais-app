@@ -68,7 +68,6 @@
       isLoading.set(false);
     } catch (e) {
       console.error('[load] Failed to initial fetch:', e);
-      setTimeout(() => isLoading.set(false), 2000);
     }
 
     // Start WS and search in parallel

@@ -152,6 +152,7 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
 
         loop.run_in_executor(None, check_trends_and_rebuild)
 
+        state.is_ready = True
         yield
         
         s_task.cancel()
@@ -163,10 +164,13 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
 
     app = FastAPI(lifespan=lifespan)
 
-    @app.head("/up")
+    @app.api_route("/api/up", methods=["GET", "HEAD"])
     async def up():
-        """Health check endpoint to verify the backend is up."""
+        """Health check endpoint. Returns 200 if ready, 503 if still initializing."""
+        if not state.is_ready:
+            return Response(status_code=503)
         return Response(status_code=200)
+    
 
     # --- UI ---
     @app.get("/")
