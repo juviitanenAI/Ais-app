@@ -34,6 +34,7 @@ export const currentSearchResults = writable([]);
 export const filterCategories = writable([]);
 
 export const wsConnected = writable(false);
+export const isBackendReady = writable(false);
 export const isLoading = writable(true);
 export const sidebarCollapsed = writable(false);
 export const sidebarExpandedAt = writable(0);

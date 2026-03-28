@@ -1,5 +1,20 @@
-import { currentSearchResults, vesselTypeCache } from './stores.js';
+import { currentSearchResults, vesselTypeCache, isBackendReady } from './stores.js';
 import { API_BASE } from './config.js';
+
+export async function waitForBackend() {
+  while (true) {
+    try {
+      const res = await fetch(`${API_BASE}/up`, { method: 'HEAD' });
+      if (res.ok) {
+        isBackendReady.set(true);
+        return;
+      }
+    } catch (e) {
+      // Backend not reachable yet
+    }
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+}
 
 export async function fetchSearchResults(query = '', categories = []) {
   try {

@@ -1,6 +1,6 @@
 # app/api.py
 from typing import List, Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pathlib import Path
 
@@ -162,6 +162,11 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         db.shutdown()
 
     app = FastAPI(lifespan=lifespan)
+
+    @app.head("/up")
+    async def up():
+        """Health check endpoint to verify the backend is up."""
+        return Response(status_code=200)
 
     # --- UI ---
     @app.get("/")

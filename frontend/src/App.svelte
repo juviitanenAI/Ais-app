@@ -3,8 +3,8 @@
   import Sidebar from './components/Sidebar.svelte';
   import Map from './components/Map.svelte';
   import LoadingOverlay from './components/LoadingOverlay.svelte';
-  import { sidebarCollapsed, isLoading, activeMmsi, activeBuoySite } from './lib/stores.js';
-  import { fetchVesselTypes, fetchLiveVesselData, fetchSearchResults, fetchBuoys } from './lib/api.js';
+  import { sidebarCollapsed, isLoading, activeMmsi, activeBuoySite, isBackendReady } from './lib/stores.js';
+  import { fetchVesselTypes, fetchLiveVesselData, fetchSearchResults, fetchBuoys, waitForBackend } from './lib/api.js';
   import { connectWebSocket } from './lib/ws.js';
   import { addOrUpdateVessel, addOrUpdateBuoy, map as leafMap, setAutoFollow, focusOnBuoy } from './lib/map.js';
   import { vessels as vesselsStore, buoys as buoysStore } from './lib/stores.js';
@@ -29,6 +29,9 @@
   });
 
   onMount(async () => {
+    isLoading.set(true);
+    await waitForBackend();
+    
     try {
       // Parallel fetch: vessel types, live data, and buoys
       const [_, data, bData] = await Promise.all([
