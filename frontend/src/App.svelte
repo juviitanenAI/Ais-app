@@ -30,10 +30,13 @@
 
   onMount(async () => {
     isLoading.set(true);
-    await waitForBackend();
+    // Start health check, but don't block yet so Map/Sidebar can mount and start their own onMount
+    const backendReadyPromise = waitForBackend();
     
     try {
-      // Parallel fetch: vessel types, live data, and buoys
+      // Parallel fetch: wait for backend, THEN vessel types, live data, and buoys
+      await backendReadyPromise;
+      
       const [_, data, bData] = await Promise.all([
         fetchVesselTypes(),
         fetchLiveVesselData(),
