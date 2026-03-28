@@ -34,20 +34,20 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
             should_check = False
             try:
                 skip_file.unlink()
-                print("[Lifespan] Integrity skip file found and deleted. Skipping check.")
+                print("[Lifespan] Integrity skip file found and deleted. Skipping check.", flush=True)
             except Exception as e:
-                print(f"[Lifespan] Failed to remove integrity skip file: {e}")
+                print(f"[Lifespan] Failed to remove integrity skip file: {e}", flush=True)
 
         if should_check:
             await loop.run_in_executor(None, db.check_integrity)
 
         # Load initial state from DB
         try:
-            print("[Lifespan] Loading initial vessel state from DB...")
+            print("[Lifespan] Loading initial vessel state from DB...", flush=True)
             await loop.run_in_executor(None, db.load_latest_into_state)
-            print(f"[Lifespan] Initial state loaded. state.latest has {len(state.latest)} vessels.")
+            print(f"[Lifespan] Initial state loaded. state.latest has {len(state.latest)} vessels.", flush=True)
             
-            print("[Lifespan] Loading initial buoy state from DB...")
+            print("[Lifespan] Loading initial buoy state from DB...", flush=True)
             buoy_rows = await loop.run_in_executor(None, db.query_buoys)
             
             buoy_cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.BUOY_RETENTION_MINUTES)
@@ -73,22 +73,22 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
                             "dataUpdatedTime": b["dataUpdatedTime"]
                         }
                         loaded_count += 1
-            print(f"[Lifespan] Initial buoy state loaded. state.buoys has {loaded_count} stations (skipped {len(buoy_rows) - loaded_count} stale).")
+            print(f"[Lifespan] Initial buoy state loaded. state.buoys has {loaded_count} stations (skipped {len(buoy_rows) - loaded_count} stale).", flush=True)
         except Exception as e:
-            print(f"[Lifespan] Initial state load failed: {e}")
+            print(f"[Lifespan] Initial state load failed: {e}", flush=True)
 
         # Update vessel types from Digitraffic (run in background)
         def update_and_cache():
             import time
             start_time = time.time()
             try:
-                print("[Lifespan] Starting background vessel type update...")
+                print("[Lifespan] Starting background vessel type update...", flush=True)
                 update_vessel_types()
                 new_types = db.query_vessel_types()
                 state.vessel_type_cache.update(new_types)
-                print(f"[Lifespan] Vessel types updated successfully. Cache now has {len(state.vessel_type_cache)} entries. Took {time.time() - start_time:.2f}s")
+                print(f"[Lifespan] Vessel types updated successfully. Cache now has {len(state.vessel_type_cache)} entries. Took {time.time() - start_time:.2f}s", flush=True)
             except Exception as e:
-                print(f"[Lifespan] Vessel type update failed after {time.time() - start_time:.2f}s: {e}")
+                print(f"[Lifespan] Vessel type update failed after {time.time() - start_time:.2f}s: {e}", flush=True)
 
         # 1. Update once on startup
         loop.run_in_executor(None, update_and_cache)
@@ -105,7 +105,7 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         try:
             state.vessel_type_cache.update(db.query_vessel_types())
         except Exception as e:
-            print(f"[Lifespan] Initial cache load failed: {e}")
+            print(f"[Lifespan] Initial cache load failed: {e}", flush=True)
 
         # Start MQTT client
         mqtt = MqttService(ws_mgr, loop)

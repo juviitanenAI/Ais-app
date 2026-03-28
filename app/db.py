@@ -29,8 +29,9 @@ def set_db_path(path: str):
 def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(_db_path, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
-    # Changed from NORMAL to FULL for better crash safety (fsync on WAL frames)
-    conn.execute("PRAGMA synchronous=FULL;")
+    # NORMAL is safe for WAL mode — the WAL itself provides crash recovery.
+    # FULL adds an fsync per WAL frame, making recovery after dirty kills catastrophically slow.
+    conn.execute("PRAGMA synchronous=NORMAL;")
     # Ensure WAL doesn't grow indefinitely
     conn.execute("PRAGMA wal_autocheckpoint=1000;")
     conn.execute("PRAGMA busy_timeout=5000;")
@@ -129,16 +130,16 @@ def check_integrity() -> bool:
     """Perform a quick integrity verify. Returns True if OK."""
     db = get_db()
     try:
-        print("[DB] Running integrity check...")
+        print("[DB] Running integrity check...", flush=True)
         res = db.execute("PRAGMA integrity_check(100);").fetchone()
         if res and res[0] == "ok":
-            print("[DB] Integrity check passed.")
+            print("[DB] Integrity check passed.", flush=True)
             return True
         else:
-            print(f"[DB] WARNING: Integrity check failed: {res[0] if res else 'Unknown error'}")
+            print(f"[DB] WARNING: Integrity check failed: {res[0] if res else 'Unknown error'}", flush=True)
             return False
     except Exception as e:
-        print(f"[DB] Integrity check error: {e}")
+        print(f"[DB] Integrity check error: {e}", flush=True)
         return False
 
 def init_schema() -> None:
@@ -568,21 +569,21 @@ def query_history(mmsis: List[str], since_sec: int) -> Dict[str, List[dict]]:
 
 def shutdown() -> None:
     """Graceful shutdown: checkpoint WAL and close all connections."""
-    print("[DB] Graceful shutdown initiated...")
+    print("[DB] Graceful shutdown initiated...", flush=True)
     db = get_db()
     try:
         with _db_lock:
             # TRUNCATE ensures WAL file is zeroed out and content moved to main DB
-            print("[DB] Checkpointing WAL...")
+            print("[DB] Checkpointing WAL...", flush=True)
             db.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-            print("[DB] WAL checkpoint complete.")
+            print("[DB] WAL checkpoint complete.", flush=True)
     except Exception as e:
-        print(f"[DB] Shutdown checkpoint failed: {e}")
+        print(f"[DB] Shutdown checkpoint failed: {e}", flush=True)
     finally:
         if hasattr(_local, "conn"):
             _local.conn.close()
             del _local.conn
-            print("[DB] Local connection closed.")
+            print("[DB] Local connection closed.", flush=True)
 
 # Alusta skeema moduulin latauksen yhteydessä
 # init_schema() - Removed top-level call to prevent startup crashes if DB is locked.
