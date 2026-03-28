@@ -22,6 +22,12 @@
   function setHistory(min) {
     historyMinutes.set(min);
   }
+
+  $: {
+    if (!options.find(o => o.value === $historyMinutes)) {
+      historyMinutes.set(options[0].value);
+    }
+  }
 </script>
 
 <div class="history-controls">

@@ -211,7 +211,7 @@ export function updateMarkerVisibility(marker, vesselData) {
   }
 }
 
-export function updateHighlights(activeMmsiId, selectedMmsisSet, activeBuoyId = null) {
+export function updateHighlights(activeMmsiId, selectedMmsisSet, activeBuoyId = null, isHeatmap = false) {
   if (!map) return;
   const vs = get(vesselsStore);
   
@@ -222,7 +222,7 @@ export function updateHighlights(activeMmsiId, selectedMmsisSet, activeBuoyId = 
     const heading = v.data.heading ?? v.data.cog ?? 0;
     
     v.marker.setIcon(shipIcon(color, heading, isPinned, isActive));
-    if (isActive) {
+    if (isActive && !isHeatmap) {
       v.marker.setZIndexOffset(1000);
       showSelectionRing([v.data.lat, v.data.lon]);
     } else {
@@ -234,7 +234,7 @@ export function updateHighlights(activeMmsiId, selectedMmsisSet, activeBuoyId = 
   buoyMarkers.forEach((marker, siteNum) => {
     const isActive = (siteNum === activeBuoyId);
     marker.setIcon(buoyIcon(isActive));
-    if (isActive) {
+    if (isActive && !isHeatmap) {
       marker.setZIndexOffset(1000);
       showSelectionRing(marker.getLatLng());
     } else if (!activeMmsiId) {
@@ -243,7 +243,7 @@ export function updateHighlights(activeMmsiId, selectedMmsisSet, activeBuoyId = 
     }
   });
 
-  if (!activeMmsiId && !activeBuoyId) {
+  if (isHeatmap || (!activeMmsiId && !activeBuoyId)) {
     clearSelectionRing();
   }
 }

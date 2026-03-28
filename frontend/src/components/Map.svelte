@@ -79,7 +79,7 @@
   // Reactively update marker highlights and selection ring
   import { updateHighlights } from '../lib/map.js';
   $: {
-    updateHighlights($activeMmsi, $selectedMmsis, $activeBuoySite);
+    updateHighlights($activeMmsi, $selectedMmsis, $activeBuoySite, $heatmapMode);
   }
 </script>
 

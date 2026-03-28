@@ -17,17 +17,17 @@
     </button>
     <button 
       class="tab-btn" 
-      class:active={$activeTab === 'heatmap'} 
-      onclick={() => switchSecondaryTab('heatmap')}
-    >
-      Heatmap
-    </button>
-    <button 
-      class="tab-btn" 
       class:active={$activeTab === 'buoys'} 
       onclick={() => switchSecondaryTab('buoys')}
     >
       Buoys ({$buoys.length})
+    </button>
+    <button 
+      class="tab-btn" 
+      class:active={$activeTab === 'heatmap'} 
+      onclick={() => switchSecondaryTab('heatmap')}
+    >
+      Heatmap
     </button>
     <button 
       class="tab-btn" 

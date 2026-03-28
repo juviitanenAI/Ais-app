@@ -101,4 +101,21 @@ describe('Selection Ring Logic', () => {
     expect(mapLib.map.removeLayer).toHaveBeenCalled();
     expect(mapLib.selectionRing).toBeNull();
   });
+
+  it('clears selection ring when isHeatmap is true', () => {
+    const mockMarker = L.marker();
+    vessels.set({
+      '123': { marker: mockMarker, data: { mmsi: '123', lat: 60, lon: 24 } }
+    });
+    
+    // First show it in normal mode
+    mapLib.updateHighlights('123', new Set(), null, false);
+    expect(mapLib.selectionRing).not.toBeNull();
+    
+    // Then update with isHeatmap = true
+    mapLib.updateHighlights('123', new Set(), null, true);
+    
+    expect(mapLib.map.removeLayer).toHaveBeenCalled();
+    expect(mapLib.selectionRing).toBeNull();
+  });
 });

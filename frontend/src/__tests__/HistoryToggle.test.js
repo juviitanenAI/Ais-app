@@ -3,6 +3,7 @@ import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import HistoryToggle from '../components/HistoryToggle.svelte';
 import { heatmapMode, historyMinutes } from '../lib/stores.js';
 import { get } from 'svelte/store';
+import { tick } from 'svelte';
 
 describe('HistoryToggle Component', () => {
   beforeEach(() => {
@@ -49,5 +50,46 @@ describe('HistoryToggle Component', () => {
     const buttons = document.querySelectorAll('.history-btn');
     expect(buttons[2].classList.contains('active')).toBe(true);
     expect(buttons[0].classList.contains('active')).toBe(false);
+  });
+
+  it('automatically resets historyMinutes to the first option when current value is invalid for mode', async () => {
+    // 1. Start with normal mode at 1h (60m)
+    heatmapMode.set(false);
+    historyMinutes.set(60);
+    render(HistoryToggle);
+    
+    expect(get(historyMinutes)).toBe(60);
+    
+    // 2. Switch to heatmap mode
+    // Heatmap options start at 12h (720m). 60m is NOT valid.
+    heatmapMode.set(true);
+    await tick();
+    
+    // Svelte's reactive statement should trigger
+    // Wait for store update
+    expect(get(historyMinutes)).toBe(720);
+    
+    // 3. Switch back to normal mode
+    // Normal mode options max out at 24h (1440m).
+    // Let's set a value ONLY in heatmap mode (e.g., 3 days = 4320m)
+    historyMinutes.set(4320);
+    heatmapMode.set(false);
+    await tick();
+    
+    expect(get(historyMinutes)).toBe(60); // First normal option
+  });
+
+  it('preserves historyMinutes if it is valid in both modes', async () => {
+    // 12h (720m) is valid in both
+    heatmapMode.set(false);
+    historyMinutes.set(720);
+    render(HistoryToggle);
+    await tick();
+    
+    expect(get(historyMinutes)).toBe(720);
+    
+    heatmapMode.set(true);
+    await tick();
+    expect(get(historyMinutes)).toBe(720);
   });
 });
