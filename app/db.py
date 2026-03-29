@@ -13,34 +13,58 @@ from .utils import validate_imo
 _db_lock = RLock()
 _rebuild_lock = RLock() # Lock to prevent multiple concurrent rebuilds
 _local = threading.local()
+
+class AlreadyRebuildingError(Exception):
+    """Raised when a cache rebuild is already in progress."""
+    pass
+
 _db_path = settings.DB_PATH
+_cache_db_path = settings.CACHE_DB_PATH
+
+def set_db_paths(main_path: str, cache_path: str):
+    global _db_path, _cache_db_path
+    _db_path = main_path
+    _cache_db_path = cache_path
+    # Clear local connections
+    for attr in ["conn", "cache_conn"]:
+        if hasattr(_local, attr):
+            try:
+                getattr(_local, attr).close()
+            except:
+                pass
+            delattr(_local, attr)
 
 def set_db_path(path: str):
     global _db_path
     _db_path = path
-    # Clear local connection if exists
-    if hasattr(_local, "conn"):
-        try:
-            _local.conn.close()
-        except:
-            pass
-        del _local.conn
+    # Ensure connections are closed
+    for attr in ["conn", "cache_conn"]:
+        if hasattr(_local, attr):
+            try:
+                getattr(_local, attr).close()
+            except:
+                pass
+            delattr(_local, attr)
+    print("[DB] Shutdown complete.", flush=True)
 
-def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(_db_path, check_same_thread=False)
+def connect(path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(path, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
-    # NORMAL is safe for WAL mode — the WAL itself provides crash recovery.
-    # FULL adds an fsync per WAL frame, making recovery after dirty kills catastrophically slow.
     conn.execute("PRAGMA synchronous=NORMAL;")
-    # Ensure WAL doesn't grow indefinitely
+    conn.execute("PRAGMA temp_store=FILE;")
     conn.execute("PRAGMA wal_autocheckpoint=1000;")
-    conn.execute("PRAGMA busy_timeout=5000;")
+    conn.execute("PRAGMA busy_timeout=30000;")
     return conn
 
 def get_db() -> sqlite3.Connection:
     if not hasattr(_local, "conn"):
-        _local.conn = connect()
+        _local.conn = connect(_db_path)
     return _local.conn
+
+def get_cache_db() -> sqlite3.Connection:
+    if not hasattr(_local, "cache_conn"):
+        _local.cache_conn = connect(_cache_db_path)
+    return _local.cache_conn
 
 def with_db_retry(func):
     """Decorator to retry DB operations if 'database is locked' occurs."""
@@ -142,106 +166,95 @@ def check_integrity() -> bool:
         print(f"[DB] Integrity check error: {e}", flush=True)
         return False
 
-def init_schema() -> None:
+def init_schema():
     db = get_db()
     with _db_lock, db:
-
         db.execute("""
-        CREATE TABLE IF NOT EXISTS vessel_latest (
-            mmsi TEXT PRIMARY KEY,
-            name TEXT,
-            call_sign TEXT,
-            type INTEGER,
-            destination TEXT,
-            last_lat REAL,
-            last_lon REAL,
-            last_time INTEGER,
-            sog REAL,
-            cog REAL,
-            heading REAL,
-            meta_ts_ms INTEGER,
-            updated_ms INTEGER,
-            imo INTEGER
-        );
+            CREATE TABLE IF NOT EXISTS vessel_latest (
+                mmsi TEXT PRIMARY KEY,
+                name TEXT,
+                call_sign TEXT,
+                type INTEGER,
+                destination TEXT,
+                last_lat REAL,
+                last_lon REAL,
+                last_time INTEGER,
+                sog REAL,
+                cog REAL,
+                heading REAL,
+                meta_ts_ms INTEGER,
+                updated_ms INTEGER,
+                imo INTEGER
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS vessel_samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mmsi TEXT NOT NULL,
+                ts INTEGER NOT NULL,
+                lat REAL NOT NULL,
+                lon REAL NOT NULL,
+                sog REAL,
+                cog REAL,
+                heading REAL
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_samples_mmsi_ts ON vessel_samples(mmsi, ts)")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_samples_mmsi_ts ON vessel_samples(mmsi, ts)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_samples_ts ON vessel_samples(ts)")
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS vessel_types (
+                code TEXT PRIMARY KEY,
+                desc_fi TEXT,
+                desc_en TEXT,
+                color TEXT,
+                category TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS buoy_latest (
+                site_number INTEGER PRIMARY KEY,
+                name TEXT,
+                type TEXT,
+                lat REAL,
+                lon REAL,
+                last_update TEXT,
+                data_updated_time TEXT,
+                properties TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS buoy_history (
+                site_number INTEGER,
+                lat REAL,
+                lon REAL,
+                last_update TEXT,
+                data_updated_time TEXT,
+                properties TEXT,
+                PRIMARY KEY (site_number, data_updated_time)
+            )
         """)
 
-        # Add imo column to existing databases if it doesn't exist
-        cursor = db.execute("PRAGMA table_info(vessel_latest)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if columns and "imo" not in columns:
-            print("[DB] Adding 'imo' column to vessel_latest...")
-            db.execute("ALTER TABLE vessel_latest ADD COLUMN imo INTEGER;")
+def init_cache_schema():
+    db = get_cache_db()
+    with _db_lock, db:
         db.execute("""
-        CREATE TABLE IF NOT EXISTS vessel_samples (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            mmsi TEXT NOT NULL,
-            ts INTEGER NOT NULL,        -- 15 min kohdistettu aikaleima (sekunteina)
-            lat REAL NOT NULL,
-            lon REAL NOT NULL,
-            sog REAL,
-            cog REAL,
-            heading REAL
-        );
+            CREATE TABLE IF NOT EXISTS heatmap_cache (
+                time_window INTEGER,
+                category TEXT,
+                lat_grid REAL,
+                lon_grid REAL,
+                weight INTEGER,
+                PRIMARY KEY (time_window, category, lat_grid, lon_grid)
+            )
         """)
-        db.execute("CREATE INDEX IF NOT EXISTS idx_samples_mmsi_ts ON vessel_samples(mmsi, ts);")
-        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_samples_mmsi_ts ON vessel_samples(mmsi, ts);")
-        db.execute("CREATE INDEX IF NOT EXISTS idx_samples_ts ON vessel_samples(ts);")
-
-        # Alusten tyyppien kuvaukset ja värit
         db.execute("""
-        CREATE TABLE IF NOT EXISTS vessel_types (
-            code TEXT PRIMARY KEY,
-            desc_fi TEXT,
-            desc_en TEXT,
-            color TEXT,
-            category TEXT
-        );
+            CREATE TABLE IF NOT EXISTS activity_trends_cache (
+                time_window INTEGER PRIMARY KEY,
+                json_blob TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
         """)
-
-        db.execute("""
-        CREATE TABLE IF NOT EXISTS heatmap_cache (
-            time_window INTEGER,
-            category TEXT,
-            lat_grid REAL,
-            lon_grid REAL,
-            weight INTEGER,
-            PRIMARY KEY (time_window, category, lat_grid, lon_grid)
-        );
-        """)
-
-        db.execute("""
-        CREATE TABLE IF NOT EXISTS activity_trends_cache (
-            time_window INTEGER PRIMARY KEY,
-            json_blob TEXT NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-        """)
-
-        db.execute("""
-        CREATE TABLE IF NOT EXISTS buoy_latest (
-            site_number INTEGER PRIMARY KEY,
-            name TEXT,
-            type TEXT,
-            lat REAL,
-            lon REAL,
-            last_update TEXT,
-            data_updated_time TEXT,
-            properties TEXT
-        );
-        """)
-
-        db.execute("""
-        CREATE TABLE IF NOT EXISTS buoy_history (
-            site_number INTEGER,
-            lat REAL,
-            lon REAL,
-            last_update TEXT,
-            data_updated_time TEXT,
-            properties TEXT,
-            PRIMARY KEY (site_number, data_updated_time)
-        );
-        """)
-
 
 @with_db_retry
 def upsert_latest(mmsi: str, loc: Optional[dict] = None, meta: Optional[dict] = None) -> None:
@@ -409,11 +422,21 @@ def insert_snapshot_for_mmsis(mmsis: Iterable[str], ts_floor: int) -> None:
 def prune_history(older_than_minutes: int = 24 * 60) -> None:
     cutoff = int(time.time()) - older_than_minutes * 60
     db = get_db()
+    cache_db = get_cache_db()
+    
     with _db_lock, db:
         db.execute("DELETE FROM vessel_samples WHERE ts < ?", (cutoff,))
+    
+    with _db_lock, cache_db:
         # Prune trends cache rows whose window is entirely outside retention
         # (windows referencing data older than cutoff are stale)
-        db.execute("DELETE FROM activity_trends_cache WHERE updated_at < ?", (cutoff,))
+        cache_db.execute("DELETE FROM activity_trends_cache WHERE updated_at < ?", (cutoff,))
+
+def count_samples() -> int:
+    """Returns the total number of rows in vessel_samples."""
+    db = get_db()
+    row = db.execute("SELECT COUNT(*) FROM vessel_samples").fetchone()
+    return row[0] if row else 0
 
 @with_db_retry
 def prune_vessel_latest(older_than_minutes: int = 24 * 60) -> None:
@@ -585,20 +608,10 @@ def shutdown() -> None:
             del _local.conn
             print("[DB] Local connection closed.", flush=True)
 
-# Alusta skeema moduulin latauksen yhteydessä
-# init_schema() - Removed top-level call to prevent startup crashes if DB is locked.
-# It is now called explicitly in the FastAPI lifespan.
-
 def rebuild_heatmap_cache() -> None:
-    """Rebuild heatmap cache using a shadow table approach for safety and atomicity.
-    
-    SELECTs aggregated data into Python memory first, then INSERTs in small
-    batches with commits between them so the DB write-lock is released
-    periodically and snapshot/flusher writes can slip through.
-    """
+    """Rebuild heatmap cache using a separate database to avoid write-lock contention."""
     if not _rebuild_lock.acquire(blocking=False):
-        print("[Heatmap] Rebuild already in progress, skipping.")
-        return
+        raise AlreadyRebuildingError("Heatmap rebuild already in progress")
     
     BATCH_SIZE = 500
 
@@ -606,12 +619,14 @@ def rebuild_heatmap_cache() -> None:
         now = int(time.time())
         windows = [720, 1440, 4320, 10080]  # 12h, 24h, 3d, 1w
         
-        # Dedicated connection for the heavy lifting
-        db = connect()
+        # Dual connections: read from main, write to cache
+        conn_main = connect(_db_path)
+        conn_cache = connect(_cache_db_path)
         try:
-            # 1. Create shadow table
-            db.execute("DROP TABLE IF EXISTS heatmap_cache_new")
-            db.execute("""
+            # 1. Create shadow table in cache DB
+            conn_cache.execute("BEGIN IMMEDIATE")
+            conn_cache.execute("DROP TABLE IF EXISTS heatmap_cache_new")
+            conn_cache.execute("""
                 CREATE TABLE heatmap_cache_new (
                     time_window INTEGER,
                     category TEXT,
@@ -621,14 +636,14 @@ def rebuild_heatmap_cache() -> None:
                     PRIMARY KEY (time_window, category, lat_grid, lon_grid)
                 )
             """)
-            db.commit()
+            conn_cache.commit()
 
             for w in windows:
                 print(f"[Heatmap] Building shadow cache for {w}m...", flush=True)
                 cutoff = now - w * 60
 
-                # Step A: SELECT into memory (read-only, no write lock)
-                rows_cat = db.execute("""
+                # Step A: SELECT from main DB
+                cursor_cat = conn_main.execute("""
                     SELECT COALESCE(vt.category, 'Other'),
                            ROUND(vs.lat, 3),
                            ROUND(vs.lon, 3),
@@ -638,9 +653,25 @@ def rebuild_heatmap_cache() -> None:
                     LEFT JOIN vessel_types vt ON vl.type = vt.code
                     WHERE vs.ts >= ?
                     GROUP BY COALESCE(vt.category, 'Other'), ROUND(vs.lat, 3), ROUND(vs.lon, 3)
-                """, (cutoff,)).fetchall()
+                """, (cutoff,))
 
-                rows_all = db.execute("""
+                processed_cat = 0
+                while True:
+                    batch_cat = cursor_cat.fetchmany(BATCH_SIZE)
+                    if not batch_cat:
+                        break
+                    to_insert = [(w, cat, lat, lon, wt) for cat, lat, lon, wt in batch_cat]
+                    conn_cache.executemany("""
+                        INSERT OR REPLACE INTO heatmap_cache_new
+                        (time_window, category, lat_grid, lon_grid, weight)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, to_insert)
+                    conn_cache.commit()
+                    processed_cat += len(batch_cat)
+                    if processed_cat % 1000 == 0:
+                        print(f"[Heatmap] Progress ({w}m, by-category): {processed_cat} rows...", flush=True)
+
+                cursor_all = conn_main.execute("""
                     SELECT 'all',
                            ROUND(vs.lat, 3),
                            ROUND(vs.lon, 3),
@@ -648,48 +679,58 @@ def rebuild_heatmap_cache() -> None:
                     FROM vessel_samples vs
                     WHERE vs.ts >= ?
                     GROUP BY ROUND(vs.lat, 3), ROUND(vs.lon, 3)
-                """, (cutoff,)).fetchall()
+                """, (cutoff,))
 
-                # Step B: INSERT in batches, committing between to yield the write lock
-                all_rows = [(w, cat, lat, lon, wt) for cat, lat, lon, wt in rows_cat]
-                all_rows += [(w, cat, lat, lon, wt) for cat, lat, lon, wt in rows_all]
-
-                for i in range(0, len(all_rows), BATCH_SIZE):
-                    batch = all_rows[i:i + BATCH_SIZE]
-                    db.executemany("""
+                processed_all = 0
+                while True:
+                    batch_all = cursor_all.fetchmany(BATCH_SIZE)
+                    if not batch_all:
+                        break
+                    to_insert = [(w, cat, lat, lon, wt) for cat, lat, lon, wt in batch_all]
+                    conn_cache.executemany("""
                         INSERT OR REPLACE INTO heatmap_cache_new
                         (time_window, category, lat_grid, lon_grid, weight)
                         VALUES (?, ?, ?, ?, ?)
-                    """, batch)
-                    db.commit()
+                    """, to_insert)
+                    conn_cache.commit()
+                    processed_all += len(batch_all)
+                    if processed_all % 1000 == 0:
+                        print(f"[Heatmap] Progress ({w}m, all): {processed_all} rows...", flush=True)
 
-            # 2. Atomic swap
-            with _db_lock: # Hold main lock during the final swap
-                main_db = get_db()
-                main_db.execute("BEGIN TRANSACTION")
+            # 2. Atomic swap in cache DB
+            for attempt in range(5):
                 try:
-                    main_db.execute("DROP TABLE IF EXISTS heatmap_cache")
-                    main_db.execute("ALTER TABLE heatmap_cache_new RENAME TO heatmap_cache")
-                    main_db.commit()
+                    conn_cache.execute("BEGIN IMMEDIATE")
+                    conn_cache.execute("DROP TABLE IF EXISTS heatmap_cache")
+                    conn_cache.execute("ALTER TABLE heatmap_cache_new RENAME TO heatmap_cache")
+                    conn_cache.commit()
                     print("[Heatmap] Cache swap complete.", flush=True)
-                except Exception as e:
-                    main_db.rollback()
-                    print(f"[Heatmap] Cache swap failed: {e}", flush=True)
+                    break
+                except sqlite3.OperationalError as e:
+                    if "locked" in str(e).lower() and attempt < 4:
+                        conn_cache.rollback()
+                        time.sleep(1)
+                        continue
                     raise
         finally:
-            db.close()
+            conn_main.close()
+            conn_cache.close()
     finally:
         _rebuild_lock.release()
 
 def query_heatmap_cache(minutes: int, category: Optional[str] = None) -> List[List[float]]:
-    db = get_db()
+    db = get_cache_db()
     cat_filter = category.lower() if category and category.lower() != "all" else "all"
     
     sql = "SELECT lat_grid, lon_grid, weight FROM heatmap_cache WHERE time_window = ? AND category = ?"
-    rows = db.execute(sql, (minutes, cat_filter)).fetchall()
-    
-    # Leaflet heat plugin format: [lat, lon, intensity]
-    return [[r[0], r[1], float(r[2])] for r in rows]
+    # Use retry for query too in case of massive rebuild swap
+    for _ in range(5):
+        try:
+            rows = db.execute(sql, (minutes, cat_filter)).fetchall()
+            return [[r[0], r[1], float(r[2])] for r in rows]
+        except sqlite3.OperationalError:
+            time.sleep(0.5)
+    return []
 
 def query_stats_activity(minutes_window: int) -> dict:
     """Live computation of activity stats — used as fallback and by the cache builder."""
@@ -728,65 +769,64 @@ def query_stats_activity(minutes_window: int) -> dict:
 
 
 def rebuild_trends_cache() -> None:
-    """Pre-compute activity trends using a shadow table approach for safety and atomicity."""
+    """Pre-compute activity trends using a shadow table approach in the cache database."""
     if not _rebuild_lock.acquire(blocking=False):
-        print("[Trends] Rebuild already in progress, skipping.")
-        return
+        raise AlreadyRebuildingError("Trends rebuild already in progress")
 
     try:
         windows = [720, 1440, 4320, 10080]  # 12h, 24h, 3d, 1w
         now = int(time.time())
-        db = connect()
+        conn_cache = connect(_cache_db_path)
         try:
             # 1. Create shadow table
-            db.execute("DROP TABLE IF EXISTS activity_trends_cache_new")
-            db.execute("""
+            conn_cache.execute("BEGIN IMMEDIATE")
+            conn_cache.execute("DROP TABLE IF EXISTS activity_trends_cache_new")
+            conn_cache.execute("""
                 CREATE TABLE activity_trends_cache_new (
                     time_window INTEGER PRIMARY KEY,
                     json_blob TEXT NOT NULL,
                     updated_at INTEGER NOT NULL
                 )
             """)
-            db.commit()
+            conn_cache.commit()
 
             for w in windows:
                 print(f"[Trends] Building shadow cache for {w}m...", flush=True)
                 data = query_stats_activity(w)
-                blob = json.dumps(data, separators=(',', ':'))
-                db.execute("""
-                    INSERT INTO activity_trends_cache_new (time_window, json_blob, updated_at)
+                blob = json.dumps(data, separators=(',', ':'))  # compact JSON
+                conn_cache.execute("""
+                    INSERT OR REPLACE INTO activity_trends_cache_new (time_window, json_blob, updated_at)
                     VALUES (?, ?, ?)
                 """, (w, blob, now))
-                db.commit()
+                conn_cache.commit()
 
             # 2. Atomic swap
-            with _db_lock:
-                main_db = get_db()
-                main_db.execute("BEGIN TRANSACTION")
+            for attempt in range(5):
                 try:
-                    main_db.execute("DROP TABLE IF EXISTS activity_trends_cache")
-                    main_db.execute("ALTER TABLE activity_trends_cache_new RENAME TO activity_trends_cache")
-                    main_db.commit()
+                    conn_cache.execute("BEGIN IMMEDIATE")
+                    conn_cache.execute("DROP TABLE IF EXISTS activity_trends_cache")
+                    conn_cache.execute("ALTER TABLE activity_trends_cache_new RENAME TO activity_trends_cache")
+                    conn_cache.commit()
                     print("[Trends] Cache swap complete.", flush=True)
-                except Exception as e:
-                    main_db.rollback()
-                    print(f"[Trends] Cache swap failed: {e}", flush=True)
+                    break
+                except sqlite3.OperationalError as e:
+                    if "locked" in str(e).lower() and attempt < 4:
+                        conn_cache.rollback()
+                        time.sleep(1)
+                        continue
                     raise
         finally:
-            db.close()
-        print("[Trends] Cache rebuild complete.", flush=True)
+            conn_cache.close()
     finally:
         _rebuild_lock.release()
 
-
 def query_trends_cache(minutes: int) -> Optional[dict]:
-    """Read pre-computed trends from cache. Returns None if cache miss."""
-    db = get_db()
-    row = db.execute(
-        "SELECT json_blob FROM activity_trends_cache WHERE time_window = ?",
-        (minutes,)
-    ).fetchone()
-    if row:
+    db = get_cache_db()
+    sql = "SELECT json_blob FROM activity_trends_cache WHERE time_window = ?"
+    try:
+        row = db.execute(sql, (minutes,)).fetchone()
+        if not row:
+            return None
         data = json.loads(row[0])
         # Normalize and merge "other" categories on-the-fly to handle legacy cached data
         if "categories" in data:
@@ -803,4 +843,5 @@ def query_trends_cache(minutes: int) -> Optional[dict]:
                         merged[name]["color"] = "#8899aa"
             data["categories"] = list(merged.values())
         return data
-    return None
+    except Exception:
+        return None

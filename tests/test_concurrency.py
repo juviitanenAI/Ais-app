@@ -7,26 +7,32 @@ from app import db, state
 def isolated_db(monkeypatch, tmp_path):
     import sqlite3
     db_file = str(tmp_path / "test_concurrency.sqlite")
-    
-    def mock_connect():
+    cache_file = str(tmp_path / "test_cache.sqlite")
+
+    def mock_connect(path):
         # Using timeout to ensure we don't hang if there's a real deadlock
-        conn = sqlite3.connect(db_file, check_same_thread=False, timeout=5)
+        conn = sqlite3.connect(path, check_same_thread=False, timeout=5)
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
         return conn
 
     monkeypatch.setattr(db, "connect", mock_connect)
-    
-    # Reset local connection
-    if hasattr(db._local, "conn"):
-        db._local.conn.close()
-        del db._local.conn
-        
+    monkeypatch.setattr(db, "_db_path", db_file)
+    monkeypatch.setattr(db, "_cache_db_path", cache_file)
+
+    # Reset local connections
+    for attr in ["conn", "cache_conn"]:
+        if hasattr(db._local, attr):
+            getattr(db._local, attr).close()
+            delattr(db._local, attr)
+
     db.init_schema()
+    db.init_cache_schema()
     yield
-    if hasattr(db._local, "conn"):
-        db._local.conn.close()
-        del db._local.conn
+    for attr in ["conn", "cache_conn"]:
+        if hasattr(db._local, attr):
+            getattr(db._local, attr).close()
+            delattr(db._local, attr)
 
 def test_cache_rebuild_does_not_block_writes():
     """

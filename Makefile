@@ -1,4 +1,4 @@
-.PHONY: deploy sync install test dev bump_version calculate-views build-frontend fetch-db backup-db
+.PHONY: deploy sync install test dev bump_version calculate-views build-frontend fetch-db backup-db rebuild-cache
 
 ifneq (,$(wildcard ./.env))
     include .env
@@ -58,22 +58,30 @@ sync:
 	rsync -avz --exclude='.venv' --exclude='__pycache__' --exclude='.git' --exclude='*.sqlite*' --exclude='frontend/node_modules' ./ $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/
 
 fetch-db:
-	@echo "Fetching remote database..."
+	@echo "Fetching remote databases..."
 	@mkdir -p remote_db
 	ssh $(REMOTE_USER)@$(REMOTE_HOST) "cd $(REMOTE_DIR) && .venv/bin/python -c 'from app import db; db.shutdown()'"
 	rsync -avz $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/vessels.sqlite* remote_db/
+	rsync -avz $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/cache.sqlite* remote_db/
 
 backup-db:
-	@echo "Backing up remote database..."
+	@echo "Backing up remote databases..."
 	-@ssh $(REMOTE_USER)@$(REMOTE_HOST) "cp $(REMOTE_DIR)/vessels.sqlite $(REMOTE_DIR)/vessels.sqlite.bak"
+	-@ssh $(REMOTE_USER)@$(REMOTE_HOST) "cp $(REMOTE_DIR)/cache.sqlite $(REMOTE_DIR)/cache.sqlite.bak"
 
 push-db:
-	@echo "Pushing local database to remote..."
+	@echo "Pushing local databases to remote..."
 	-@ssh $(REMOTE_USER)@$(REMOTE_HOST) "curl -f -X POST http://localhost:$(APP_PORT)/api/admin/shutdown || pkill -f 'uvicorn main:app'"
 	@sleep 2
 	ssh $(REMOTE_USER)@$(REMOTE_HOST) "rm -f $(REMOTE_DIR)/vessels.sqlite $(REMOTE_DIR)/vessels.sqlite-wal $(REMOTE_DIR)/vessels.sqlite-shm"
+	ssh $(REMOTE_USER)@$(REMOTE_HOST) "rm -f $(REMOTE_DIR)/cache.sqlite $(REMOTE_DIR)/cache.sqlite-wal $(REMOTE_DIR)/cache.sqlite-shm"
 	scp vessels.sqlite* $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/
+	scp cache.sqlite* $(REMOTE_USER)@$(REMOTE_HOST):$(REMOTE_DIR)/
 	@echo "Database push complete."
 
 install:
 	ssh $(REMOTE_USER)@$(REMOTE_HOST) "cd $(REMOTE_DIR) && ( [ -f '.venv/bin/pip' ] || rm -rf .venv ) && [ ! -d '.venv' ] && virtualenv -p python3 --system-site-packages .venv || true && .venv/bin/pip install -r requirements.txt"
+
+rebuild-cache:
+	@echo "Triggering remote cache rebuild (heatmap & trends)..."
+	ssh $(REMOTE_USER)@$(REMOTE_HOST) "curl -f -X POST http://localhost:$(APP_PORT)/api/heatmap/rebuild && curl -f -X POST http://localhost:$(APP_PORT)/api/stats/activity/rebuild"

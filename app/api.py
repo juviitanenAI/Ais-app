@@ -21,13 +21,10 @@ FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 def create_app(ws_mgr: WebSocketManager) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Explicit initialization
-        db.init_schema()
-        
         loop = asyncio.get_running_loop()
 
-        # Check integrity (if enabled via settings)
-        # We run this in an executor so the event loop stays responsive during the long scan.
+        # Resolve skip-integrity BEFORE opening the DB — connect() itself
+        # can trigger WAL recovery which is the actual expensive operation.
         skip_file = Path(".skip_integrity")
         should_check = settings.CHECK_INTEGRITY
         if skip_file.exists():
@@ -38,6 +35,16 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
             except Exception as e:
                 print(f"[Lifespan] Failed to remove integrity skip file: {e}", flush=True)
 
+        # Schema init (first DB connection — may trigger WAL recovery after dirty kills)
+        import time as _time
+        t0 = _time.monotonic()
+        print("[Lifespan] Initializing DB schemas...", flush=True)
+        await loop.run_in_executor(None, db.init_schema)
+        await loop.run_in_executor(None, db.init_cache_schema)
+        elapsed = _time.monotonic() - t0
+        print(f"[Lifespan] DB schemas ready ({elapsed:.1f}s)", flush=True)
+
+        # Integrity check (if enabled and not skipped)
         if should_check:
             await loop.run_in_executor(None, db.check_integrity)
 
@@ -121,36 +128,37 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         buoy_service = BuoyService(ws_mgr, loop)
         buoy_service.start()
         
-        # 4. Check if heatmap cache is empty and rebuild if so
-        def check_heatmap_and_rebuild():
+        # 4. Background Cache Checks (Heatmap & Trends)
+        def check_caches_and_rebuild():
             try:
-                # Check 24h window as a representative sample
-                data = db.query_heatmap_cache(1440)
-                if not data:
-                    print("[Heatmap] Cache appears empty on startup. Triggering automatic background rebuild...")
-                    db.rebuild_heatmap_cache()
-                    print("[Heatmap] Initial automatic rebuild complete.")
-                else:
-                    print(f"[Heatmap] Cache check: {len(data)} entries found for 24h window. Skipping startup rebuild.")
+                # Give the system 60 seconds to settle before heavy background rebuild
+                _time.sleep(60)
+                
+                # Check Heatmap
+                heatmap_data = db.query_heatmap_cache(1440)
+                if not heatmap_data:
+                    sample_count = db.count_samples()
+                    if sample_count > 0:
+                        print(f"[Heatmap] Cache empty but {sample_count} samples found. Triggering initial rebuild...")
+                        db.rebuild_heatmap_cache()
+                        print("[Heatmap] Initial automatic rebuild complete.")
+                
+                # Check Trends
+                trends_data = db.query_trends_cache(1440)
+                if not trends_data:
+                    sample_count = db.count_samples()
+                    if sample_count > 0:
+                        print(f"[Trends] Cache empty but {sample_count} samples found. Triggering initial rebuild...")
+                        db.rebuild_trends_cache()
+                        print("[Trends] Initial automatic rebuild complete.")
+                        
+            except db.AlreadyRebuildingError:
+                # This might happen if a user manually triggered a rebuild during the 60s sleep
+                print("[Lifespan] Startup rebuild skipped: already in progress.")
             except Exception as e:
-                print(f"[Heatmap] Automatic startup check/rebuild failed: {e}")
+                print(f"[Lifespan] Automatic startup check/rebuild failed: {e}")
 
-        loop.run_in_executor(None, check_heatmap_and_rebuild)
-
-        # 5. Check if trends cache is empty and rebuild if so
-        def check_trends_and_rebuild():
-            try:
-                data = db.query_trends_cache(1440)
-                if not data:
-                    print("[Trends] Cache appears empty on startup. Triggering automatic background rebuild...")
-                    db.rebuild_trends_cache()
-                    print("[Trends] Initial automatic rebuild complete.")
-                else:
-                    print(f"[Trends] Cache check: data found for 24h window. Skipping startup rebuild.")
-            except Exception as e:
-                print(f"[Trends] Automatic startup check/rebuild failed: {e}")
-
-        loop.run_in_executor(None, check_trends_and_rebuild)
+        loop.run_in_executor(None, check_caches_and_rebuild)
 
         state.is_ready = True
         yield
@@ -271,6 +279,8 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
             # Run in executor to avoid blocking the event loop
             await loop.run_in_executor(None, db.rebuild_heatmap_cache)
             return JSONResponse({"status": "success", "message": "Heatmap cache rebuild complete"})
+        except db.AlreadyRebuildingError as e:
+            return JSONResponse({"status": "ignored", "message": str(e)}, status_code=409)
         except Exception as e:
             return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
@@ -281,6 +291,8 @@ def create_app(ws_mgr: WebSocketManager) -> FastAPI:
         try:
             await loop.run_in_executor(None, db.rebuild_trends_cache)
             return JSONResponse({"status": "success", "message": "Trends cache rebuild complete"})
+        except db.AlreadyRebuildingError as e:
+            return JSONResponse({"status": "ignored", "message": str(e)}, status_code=409)
         except Exception as e:
             return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 

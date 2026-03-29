@@ -4,24 +4,39 @@ import pytest
 def isolated_db(monkeypatch, tmp_path):
     import sqlite3
     db_file = str(tmp_path / "test_vessels.sqlite")
+    cache_file = str(tmp_path / "test_cache.sqlite")
     
-    def mock_connect():
-        conn = sqlite3.connect(db_file, check_same_thread=False)
+    def mock_connect(path):
+        conn = sqlite3.connect(path, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
         return conn
 
     from app import db
     monkeypatch.setattr(db, "connect", mock_connect)
+    monkeypatch.setattr(db, "_db_path", db_file)
+    monkeypatch.setattr(db, "_cache_db_path", cache_file)
     
-    if hasattr(db._local, "conn"):
-        del db._local.conn
+    # Reset local connections
+    for attr in ["conn", "cache_conn"]:
+        if hasattr(db._local, attr):
+            try:
+                getattr(db._local, attr).close()
+            except:
+                pass
+            delattr(db._local, attr)
         
     db.init_schema()
+    db.init_cache_schema()
     yield
-    if hasattr(db._local, "conn"):
-        db._local.conn.close()
-        del db._local.conn
+    # Cleanup
+    for attr in ["conn", "cache_conn"]:
+        if hasattr(db._local, attr):
+            try:
+                getattr(db._local, attr).close()
+            except:
+                pass
+            delattr(db._local, attr)
 
 def test_upsert_latest():
     from app.db import upsert_latest, get_db
@@ -171,10 +186,10 @@ def test_prune_vessel_latest():
     assert mmsi1 not in mmsis
 
 def test_query_trends_cache_normalization():
-    from app.db import get_db, query_trends_cache
+    from app.db import get_cache_db, query_trends_cache
     import json
     
-    conn = get_db()
+    conn = get_cache_db()
     # Insert legacy data with duplicate "other" categories
     legacy_data = {
         "timeline": [{"ts": 1000, "count": 10}],

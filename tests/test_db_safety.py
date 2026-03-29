@@ -7,26 +7,34 @@ from app import db
 
 @pytest.fixture(autouse=True)
 def isolated_db(monkeypatch, tmp_path):
+    import sqlite3
     db_file = str(tmp_path / "test_safety.sqlite")
+    cache_file = str(tmp_path / "test_cache.sqlite")
     
-    def mock_connect():
-        conn = sqlite3.connect(db_file, check_same_thread=False, timeout=5)
+    def mock_connect(path):
+        conn = sqlite3.connect(path, check_same_thread=False, timeout=5)
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
         return conn
 
+    from app import db
     monkeypatch.setattr(db, "connect", mock_connect)
+    monkeypatch.setattr(db, "_db_path", db_file)
+    monkeypatch.setattr(db, "_cache_db_path", cache_file)
     
-    # Reset local connection
-    if hasattr(db._local, "conn"):
-        db._local.conn.close()
-        del db._local.conn
+    # Reset local connections
+    for attr in ["conn", "cache_conn"]:
+        if hasattr(db._local, attr):
+            getattr(db._local, attr).close()
+            delattr(db._local, attr)
         
     db.init_schema()
+    db.init_cache_schema()
     yield
-    if hasattr(db._local, "conn"):
-        db._local.conn.close()
-        del db._local.conn
+    for attr in ["conn", "cache_conn"]:
+        if hasattr(db._local, attr):
+            getattr(db._local, attr).close()
+            delattr(db._local, attr)
 
 def test_rebuild_concurrency_lock():
     """Verify that multiple concurrent calls to rebuild_heatmap_cache skip if already running."""
@@ -48,19 +56,19 @@ def test_rebuild_concurrency_lock():
         locked_event.wait(timeout=2)
         assert _rebuild_lock.locked()
         
-        # This should return immediately because of the lock held by the other thread
-        with patch('builtins.print') as mock_print:
+        # This should now raise AlreadyRebuildingError because of the lock held by the other thread
+        from app.db import AlreadyRebuildingError
+        with pytest.raises(AlreadyRebuildingError):
             rebuild_heatmap_cache()
-            mock_print.assert_any_call("[Heatmap] Rebuild already in progress, skipping.")
     finally:
         stop_event.set()
         t.join()
 
 def test_heatmap_rebuild_atomicity():
     """Verify that the ancient heatmap_cache is still readable while a new one is being built."""
-    from app.db import get_db, rebuild_heatmap_cache
+    from app.db import get_cache_db, rebuild_heatmap_cache
     
-    conn = get_db()
+    conn = get_cache_db()
     # 1. Seat some initial data
     conn.execute("INSERT INTO heatmap_cache (time_window, category, lat_grid, lon_grid, weight) VALUES (720, 'all', 1.0, 1.0, 10)")
     conn.commit()
@@ -96,28 +104,24 @@ def test_heatmap_rebuild_atomicity():
 
 def test_rebuild_cleanup_on_failure():
     """Verify that heatmap_cache is NOT dropped if the rebuild fails before the swap."""
-    from app.db import get_db, rebuild_heatmap_cache
+    from app.db import get_cache_db, rebuild_heatmap_cache
     import sqlite3
     
-    conn = get_db()
-    conn.execute("INSERT INTO heatmap_cache (time_window, category, lat_grid, lon_grid, weight) VALUES (720, 'all', 2.0, 2.0, 20)")
-    conn.commit()
+    original_conn = get_cache_db()
+    original_conn.execute("INSERT INTO heatmap_cache (time_window, category, lat_grid, lon_grid, weight) VALUES (720, 'all', 2.0, 2.0, 20)")
+    original_conn.commit()
     
-    # To mock a failure during execution on an immutable type, 
-    # we mock 'connect' to return a MagicMock connection, OR 
-    # we patch the 'rebuild_heatmap_cache' internals.
+    # To mock a failure during execution, we'll mock 'connect' 
+    # so that any attempt to open a NEW connection inside the rebuild fails.
     
-    # Let's mock the actual INSERT query by patching the CONNECTION'S execute.
-    # Since we use get_db(), we can mock THAT.
+    original_connect = db.connect
+    def mock_fail_connect(path):
+        raise sqlite3.OperationalError("Simulated Connection Failure")
     
-    original_conn = get_db()
-    mock_conn = MagicMock(spec=sqlite3.Connection)
-    mock_conn.execute.side_effect = Exception("Simulated Crash")
-    
-    with patch('app.db.get_db', return_value=mock_conn):
+    with patch('app.db.connect', side_effect=mock_fail_connect):
         try:
             rebuild_heatmap_cache()
-        except:
+        except sqlite3.OperationalError:
             pass
             
     # Original table should still be intact in the REAL db
